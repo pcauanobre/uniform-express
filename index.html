@@ -277,6 +277,21 @@ function pingUpdate (phone) {
 }
 
 
+/* ------------------------------------------------------------------
+   SALVAMENTO COM DEBOUNCE (2 s de inatividade)
+------------------------------------------------------------------ */
+let _dirtyTimer = null;          // relógio do debounce
+
+function markDirty () {          // chame sempre que algo mudar
+  clearTimeout(_dirtyTimer);
+  _dirtyTimer = setTimeout(scheduleSave, 2000);
+}
+
+function scheduleSave () {
+  if (isLoading || !currentPhone) return;
+  saveData(currentPhone);        // grava no Firebase
+  showAutoSave();                // balão “✔ salvo”
+}
 
 /* ========================================================================
    PRESENÇA SIMULTÂNEA  —  tudo em um único lugar, com logs detalhados
@@ -403,14 +418,16 @@ function setupPresenceTracking () {
     });
   });
 
-  /* ---------- bloqueia clique em card travado ---------- */
-  /* bloqueia apenas no click: não atrapalha scroll no mobile */
+  /* ---------- bloqueia clique em campo travado ---------- */
   uniformList.addEventListener('click', e => {
-    const locked = e.target.closest('[data-locked="1"]');
-    if (!locked) return;
+    const row = e.target.closest('[data-locked="1"]');
+    if (!row) return;                           // não está bloqueado
 
-    e.preventDefault();          // evita abrir o select/input
-    showMsg(warn);               // mesma mensagem já declarada
+    const tag = e.target.tagName;               // só inputs reais
+    if (!['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return;
+
+    e.preventDefault();                         // impede foco
+    showMsg('Outro usuário está editando este uniforme.');
   }, true);
 
 
@@ -589,11 +606,10 @@ delPedidoYes.onclick= async ()=>{
 
 /* -------- inputs de tamanho ---------- */
 /* -------- inputs de tamanho ---------- */
-function buildSizeInputs(preFilled = {}) {
+function buildSizeInputs (preFilled = {}) {
   sizeForm.innerHTML = '';
 
   tamanhos.forEach(tam => {
-
     const row = document.createElement('div');
     row.className = 'flex items-center gap-4';
     row.innerHTML = `<label class="w-28 font-medium">${tam}</label>`;
@@ -604,85 +620,77 @@ function buildSizeInputs(preFilled = {}) {
     row.appendChild(box);
 
     const inp = document.createElement('input');
-    inp.type        = 'number';
-    inp.min         = 0;
-    inp.max         = 50;
-    inp.placeholder = 'Quantidade';
-    inp.dataset.tam = tam;
-    inp.className   = 'w-full py-4 pl-3 pr-10 text-lg border rounded-lg shadow focus:outline-indigo-500';
+    Object.assign(inp, {
+      type : 'number', min : 0, max : 50,
+      placeholder : 'Quantidade', dataset : { tam },
+    });
+    inp.className = 'w-full py-4 pl-3 pr-10 text-lg border rounded-lg shadow focus:outline-indigo-500';
     if (preFilled[tam] > 0) inp.value = preFilled[tam];
     box.appendChild(inp);
 
-    /* 👇👇 ***ESSA LINHA NOVA resolve o bug*** --------------------------- */
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
-
-    /* botões + / – ------------------------------------------------------- */
-    const makeBtn = (txt, pos, delta, color) => {
-    const b = document.createElement('button');
-    b.type        = 'button';
-    b.textContent = txt;
-    b.tabIndex    = -1;
-    b.className =
-      `absolute right-0 ${pos} w-10 h-1/2 flex items-center justify-center
-      border-l border-gray-300 rounded-r-lg shadow text-white font-bold
-      select-none ${color} hover:brightness-110`;
-    if (pos === 'top-0') b.classList.add('border-b');
-
-    // impede foco ao clicar
-    b.addEventListener('mousedown', e => e.preventDefault());
-    b.addEventListener('click', e => {
-      e.preventDefault();
-      const v = Math.min(50, Math.max(0, (parseInt(inp.value) || 0) + delta));
-      inp.value = v;
-      scheduleSave();
+    inp.addEventListener('keydown', e => e.key === 'Enter' && e.preventDefault());
+    inp.addEventListener('input', () => {             // ← debounce
+      inp.value = Math.max(0, Math.min(50, +inp.value || 0)) || '';
+      markDirty();
     });
 
-    return b;
-  };
+    /* botões + / – ----------------------------------------------------- */
+    const makeBtn = (txt, pos, delta, color) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = txt; b.tabIndex = -1;
+      b.className = `absolute right-0 ${pos} w-10 h-1/2 flex items-center
+                     justify-center border-l border-gray-300 rounded-r-lg
+                     shadow text-white font-bold select-none ${color}
+                     hover:brightness-110`;
+      if (pos === 'top-0') b.classList.add('border-b');
 
-
-    box.appendChild(makeBtn('+', 'top-0', +1, 'bg-green-600'));
-    box.appendChild(makeBtn('–', 'bottom-0', -1, 'bg-red-600'));
-
-    /* saneia digitação livre -------------------------------------------- */
-    const clamp = () => {
-      let v = parseInt(inp.value) || 0;
-      if (v < 0) v = 0;
-      if (v > 50) v = 50;
-      inp.value = v || '';
+      b.addEventListener('mousedown', e => e.preventDefault());  // sem foco
+      b.addEventListener('click', e => {
+        e.preventDefault();
+        inp.value = Math.max(0, Math.min(50, (+inp.value || 0) + delta));
+        markDirty();
+      });
+      return b;
     };
-    inp.addEventListener('input', () => { clamp(); scheduleSave(); });
+
+    box.appendChild(makeBtn('+', 'top-0',  +1, 'bg-green-600'));
+    box.appendChild(makeBtn('–', 'bottom-0', -1, 'bg-red-600'));
   });
 }
 
-/* evita qualquer submit do <form> ---------------------------------------- */
+/* evita submit do <form> ----------------------- */
 sizeForm.addEventListener('submit', e => e.preventDefault());
 
 
+
 /* -------- componentes uniforme -------- */
-function OptionList(val){
-  const s=document.createElement('select');
-  s.className='w-full md:w-40 py-3 px-2 border rounded-lg shadow bg-white mb-2 md:mb-0';
-  tamanhos.forEach(t=>s.add(new Option(t,t)));
-  s.value=val;
+function OptionList (val) {
+  const s = document.createElement('select');
+  s.className = 'w-full md:w-40 py-3 px-2 border rounded-lg shadow bg-white mb-2 md:mb-0';
+  tamanhos.forEach(t => s.add(new Option(t, t)));
+  s.value = val;
+
   s.onchange = () => {
     s.closest('[data-size]').dataset.size = s.value;
     resortRows();
     buildFilter();
     applyFilter();
-    reflectSizesFromCards();     //  << NOVO
-    scheduleSave();
+    reflectSizesFromCards();
+    markDirty();
   };
-
-  return {el:s};
+  return { el: s };
 }
-function inputTxt(ph,val,cls='w-full md:flex-1'){
-  const i=document.createElement('input');
-  i.placeholder=ph; i.value=val; i.type='text';
-  i.className=`${cls} py-3 px-3 border rounded-lg shadow mb-2 md:mb-0`;
-  i.addEventListener('input',scheduleSave);
+
+function inputTxt (ph, val, cls = 'w-full md:flex-1') {
+  const i = document.createElement('input');
+  Object.assign(i, { placeholder: ph, value: val, type: 'text' });
+  i.className = `${cls} py-3 px-3 border rounded-lg shadow mb-2 md:mb-0`;
+
+  /* debounce de 2 s */
+  i.addEventListener('input', markDirty);
   return i;
 }
+
 
 /* ---- botão Short ---- */
 function btnShort () {
@@ -954,130 +962,66 @@ async function saveData(phone){
 /* ---------------- carregar do Firebase --------------- */
 async function loadData (phone, silent = false) {
   try {
-    /* ----------------------------------------------------------
-       0) Lembra estado visual atual
-    ---------------------------------------------------------- */
-    const prevFilter = activeFilter;           // qual tamanho estava filtrado
-    const prevScroll = uniformList.scrollTop;  // posição do scroll
+    /* cache visual -------------------------------------------------- */
+    const prevFilter = activeFilter;
+    const prevScroll = uniformList.scrollTop;
 
-    /* ----------------------------------------------------------
-       1) Busca registro no Firebase
-    ---------------------------------------------------------- */
+    /* Firebase ------------------------------------------------------ */
     const snap = await get(child(ref(db), `pedidos/${phone}`));
-    if (!snap.exists()) {
-      if (!silent) showMsg('Nenhum pedido encontrado.');
-      return;
-    }
+    if (!snap.exists()) { if (!silent) showMsg('Nenhum pedido encontrado.'); return; }
 
-    /* —— fallback seguro —— */
-    const raw       = snap.val()     || {};
-    const data      = raw.data       || {};
-    data.sizes      ??= Object.fromEntries(tamanhos.map(t => [t, 0]));
-    data.uniforms   ??= [];
-    const updatedAt = raw.updatedAt  || 0;
+    const raw       = snap.val() || {};
+    const data      = raw.data   || {};
+    data.sizes    ??= Object.fromEntries(tamanhos.map(t => [t, 0]));
+    data.uniforms ??= [];
+    const updatedAt = raw.updatedAt || 0;
+    if (updatedAt <= localUpdatedAt) return;
 
-    if (updatedAt <= localUpdatedAt) return;   // nada novo
+    /* rebuild ------------------------------------------------------- */
+    isLoading = true;
+    buildSizeInputs(data.sizes);
+    uniformList.innerHTML = '';
+    data.uniforms.forEach(u => addUniformRow(u.size, u.name, u.number, u.short, u.obs, u.id));
+    isLoading = false;
+    reflectSizesFromCards();
 
-    /* ----------------------------------------------------------
-       2) Reconstrói UI —— trava o auto-save enquanto monta
-    ---------------------------------------------------------- */
-    isLoading = true;                          // 👈 pausa scheduleSave()
-
-    buildSizeInputs(data.sizes);               // inputs do passo 2
-
-    uniformList.innerHTML = '';                // limpa cartões
-    data.uniforms.forEach(u =>
-      addUniformRow(u.size, u.name, u.number, u.short, u.obs, u.id)
-    );
-
-    isLoading = false;                         // 🔓 libera scheduleSave()
-
-    /* mantém contagem dos inputs em sincronia */
-    reflectSizesFromCards();                   // ← nova função
-
-    /* ----------------------------------------------------------
-       3) Filtro de tamanhos
-    ---------------------------------------------------------- */
     buildFilter();
-    if (
-      prevFilter &&
-      [...uniformList.children].some(c => c.dataset.size === prevFilter)
-    ){
-      activeFilter = prevFilter;
-      buildFilter();
+    if (prevFilter && [...uniformList.children].some(c => c.dataset.size === prevFilter)) {
+      activeFilter = prevFilter; buildFilter();
     }
     applyFilter();
     updateSeq();
 
-    /* ----------------------------------------------------------
-       4) Presença simultânea (aplica instantaneamente)
-    ---------------------------------------------------------- */
+    /* presença simultânea ------------------------------------------ */
     const cursorSnap = await get(ref(db, 'cursors'));
-    (function applyPresence(snap) {
-      const now = Date.now();
+    applyPresence(cursorSnap);         // mesma função interna que já existe
 
-      /* limpa visual anterior */
-      uniformList.querySelectorAll('.presence-outline').forEach(card => {
-        card.classList.remove('presence-outline');
-        card.style.removeProperty('--clr');
-        card.style.removeProperty('border');
-        card.querySelector('.presence-badge')?.remove();
-        card.querySelectorAll('[data-locked]').forEach(el => el.removeAttribute('data-locked'));
-      });
-
-      /* pinta estados atuais */
-      snap.forEach(cardSnap => {
-        const rowId = cardSnap.key;
-        const card  = uniformList.querySelector(`[data-row-id="${rowId}"]`);
-        if (!card) return;
-
-        let busy = false;
-        cardSnap.forEach(u => {
-          if (u.val() < now)          return;   // expirado
-          if (u.key === USER_ID)      return;   // eu mesmo
-          busy = true;
-
-          const clr = colorFromId(u.key);
-          card.classList.add('presence-outline');
-          card.style.setProperty('--clr', clr);
-          if (!card.querySelector('.presence-badge')){
-            const b = document.createElement('span');
-            b.className  = 'presence-badge';
-            b.textContent= 'Tem alguém aqui';
-            card.appendChild(b);
-          }
-        });
-
-        card.querySelectorAll('input,select,textarea,button')
-            .forEach(el => el.disabled = busy);
-        if (busy) card.dataset.locked = '1';
-        else      delete card.dataset.locked;
-      });
-    })(cursorSnap);
-
-    /* ----------------------------------------------------------
-       5) Restaura scroll
-    ---------------------------------------------------------- */
+    /* scroll de volta ---------------------------------------------- */
     uniformList.scrollTop = prevScroll;
 
-    /* ----------------------------------------------------------
-       6) Ajustes finais de tela e timers
-    ---------------------------------------------------------- */
-    if (!silent){
+    /* decide passo a exibir ---------------------------------------- */
+    if (!silent) {
+      const anySize = Object.values(data.sizes).some(q => q > 0);
       welcome.classList.add('hidden');
-      step2  .classList.add('hidden');
-      step3  .classList.remove('hidden');
+      if (anySize) {                   // já tem quantidades → vai pro passo-3
+        step2.classList.add   ('hidden');
+        step3.classList.remove('hidden');
+      } else {                         // ainda vazio → fica no passo-2
+        step2.classList.remove('hidden');
+        step3.classList.add   ('hidden');
+      }
       showMsg('Dados recebidos com sucesso!');
     }
 
     localUpdatedAt = updatedAt;
     currentPhone   = phone;
-    if (!syncTimer) startSync();               // evita múltiplos intervalos
+    if (!syncTimer) startSync();
 
   } catch (e) {
     if (!silent) showMsg('Erro ao carregar: ' + e.message);
   }
 }
+
 
 
 
@@ -1195,24 +1139,17 @@ function syncUniforms(){
 
 }
 
-/* ------------------------------------------------------------------
-   Mantém os inputs de quantidade (Passo 2) em sincronia com
-   a lista de cartões (Passo 3).
------------------------------------------------------------------- */
+/* Mantém os inputs do passo-2 iguais à contagem real de cartões */
 function reflectSizesFromCards () {
   const counts = Object.fromEntries(tamanhos.map(t => [t, 0]));
-
-  /* conta quantos cartões existem de cada tamanho */
-  uniformList.querySelectorAll('[data-size]').forEach(c => {
-    counts[c.dataset.size]++;
-  });
-
-  /* escreve nos inputs */
+  uniformList.querySelectorAll('[data-size]')
+             .forEach(c => counts[c.dataset.size]++);
   sizeForm.querySelectorAll('input').forEach(inp => {
     const v = counts[inp.dataset.tam];
-    inp.value = v ? v : '';                 // 0 → input vazio
+    inp.value = v ? v : '';   // 0 → input vazio
   });
 }
+
 
 
 
