@@ -301,35 +301,33 @@ function setupPresenceTracking () {
 
   /* ---------- Firebase helpers ---------- */
   const pRef = (row, uid = USER_ID) => ref(db, `cursors/${row}/${uid}`);
-  const bump = (row, ttl)           => set(pRef(row), Date.now() + ttl).catch(() => {});
-  const zap  = (row, uid)           => remove(pRef(row, uid)).catch(() => {});
+  const bump = (row, ttl)           => set(pRef(row), Date.now() + ttl).catch(()=>{});
+  const zap  = (row, uid)           => remove(pRef(row, uid)).catch(()=>{});
 
   /* ---------- parâmetros ---------- */
-  const BEAT      = 2000;   // manda a cada 2 s
-  const TTL_BEAT  = 8000;   // 8 s “vivos” enquanto editando
+  const BEAT      = 2000;   // envia a cada 2 s
+  const TTL_BEAT  = 8000;   // 8 s de “vida” enquanto editando
   const TTL_GRACE = 3000;   // 3 s depois de sair do card
   const warn      = 'Outro usuário está editando este uniforme.';
 
-  /* ---------- util: aplica ou remove lock ---------- */
-  function lockControls (card, on) {
-    card.querySelectorAll('input,select,textarea,button').forEach(el => {
-      el.disabled = on;
-      el.style.pointerEvents = on ? 'none' : '';   // clique passa p/ card
+  /* ---------- util: aplica / remove bloqueio ---------- */
+  function lockControls (card, on){
+    card.querySelectorAll('input,select,textarea,button').forEach(el=>{
+      el.disabled        = on;
+      el.style.pointerEvents = on ? 'none' : '';   // clique atravessa o campo
     });
     if (on) card.dataset.locked = '1';
     else    delete card.dataset.locked;
   }
 
   /* ---------- limpa UI local ---------- */
-  function clearCardUI (rowId) {
+  function clearCardUI (rowId){
     const c = uniformList.querySelector(`[data-row-id="${rowId}"]`);
     if (!c) return;
     c.classList.remove('presence-outline');
     c.style.removeProperty('--clr');
-    c.style.border = '';
-    c.style.boxShadow = '';
     c.querySelector('.presence-badge')?.remove();
-    lockControls(c, false);                     // ◀◀ aqui
+    lockControls(c, false);
   }
 
   /* ---------- estado ---------- */
@@ -338,70 +336,70 @@ function setupPresenceTracking () {
   let graceTimer = null;
 
   /* ---------- começa edição ---------- */
-  function beginEdit (card) {
+  function beginEdit (card){
     const row = card.dataset.rowId;
     if (row === editingRow) return;
 
-    // libera o anterior
+    /* libera o anterior */
     clearInterval(keepAlive);
     clearTimeout(graceTimer);
-    if (editingRow) {
+    if (editingRow){
       zap(editingRow, USER_ID);
       clearCardUI(editingRow);
     }
 
-    // novo cartão
+    /* novo cartão */
     editingRow = row;
     bump(row, TTL_BEAT);
-    keepAlive = setInterval(() => bump(row, TTL_BEAT), BEAT);
+    keepAlive = setInterval(()=> bump(row, TTL_BEAT), BEAT);
   }
 
-  /* foco em qualquer campo dentro do card → começa edição */
-  uniformList.addEventListener('focusin', e => {
+  /* foco dentro do card → avisa “estou editando” */
+  uniformList.addEventListener('focusin', e=>{
     const card = e.target.closest('[data-row-id]');
     if (card && !card.dataset.locked) beginEdit(card);
   }, true);
 
-  /* focus out – grace of 3 s */
-  uniformList.addEventListener('focusout', e => {
+  /* sai do foco → grace de 3 s antes de liberar */
+  uniformList.addEventListener('focusout', e=>{
     const card = e.target.closest('[data-row-id]');
     if (!card || card.dataset.rowId !== editingRow) return;
 
-    setTimeout(() => {
-      if (card.contains(document.activeElement)) return; // ainda dentro
+    setTimeout(()=>{
+      if (card.contains(document.activeElement)) return; // ainda lá dentro
       clearInterval(keepAlive);
-      graceTimer = setTimeout(() => {
+      graceTimer = setTimeout(()=>{
         zap(editingRow, USER_ID);
         clearCardUI(editingRow);
         editingRow = null;
       }, TTL_GRACE);
-    }, 0);
+    },0);
   }, true);
 
   /* ---------- listener Firebase ---------- */
-  onValue(ref(db, 'cursors'), snap => {
+  onValue(ref(db,'cursors'), snap=>{
     const now = Date.now();
 
-    // limpa tudo antes de aplicar estados novos
+    /* limpa tudo antes de aplicar novos estados */
     uniformList.querySelectorAll('.presence-outline')
       .forEach(c => clearCardUI(c.dataset.rowId));
 
-    // aplica presença
-    snap.forEach(cardSnap => {
+    /* aplica presença remota */
+    snap.forEach(cardSnap=>{
       const card = uniformList.querySelector(`[data-row-id="${cardSnap.key}"]`);
       if (!card) return;
 
       let busy = false;
-      cardSnap.forEach(u => {
-        if (u.val() < now) return;
-        if (u.key === USER_ID) return;
+      cardSnap.forEach(u=>{
+        if (u.val() < now) return;         // expirado
+        if (u.key === USER_ID) return;     // sou eu
         busy = true;
 
         const clr = colorFromId(u.key);
         card.classList.add('presence-outline');
         card.style.setProperty('--clr', clr);
 
-        if (!card.querySelector('.presence-badge')) {
+        if (!card.querySelector('.presence-badge')){
           const b = document.createElement('span');
           b.className = 'presence-badge';
           b.textContent = 'Tem alguém aqui';
@@ -409,23 +407,23 @@ function setupPresenceTracking () {
         }
       });
 
-      lockControls(card, busy);                // ◀◀ aqui
+      lockControls(card, busy);
     });
   });
 
-  /* ---------- aviso de bloqueio ---------- */
-  uniformList.addEventListener('click', e => {
+  /* ---------- clique em cartão travado → popup ---------- */
+  uniformList.addEventListener('click', e=>{
     const lockedCard = e.target.closest('[data-locked="1"]');
     if (!lockedCard) return;
-    e.preventDefault();
-    showMsg(warn);
+    e.preventDefault();          // não deixa nada ser selecionado
+    showMsg(warn);               // popup
   }, true);
 
-  /* ---------- GC ---------- */
-  setInterval(() => {
+  /* ---------- GC: remove cursores expirados ---------- */
+  setInterval(()=>{
     const cut = Date.now();
-    get(ref(db, 'cursors')).then(snap => {
-      snap.forEach(card => card.forEach(u => {
+    get(ref(db,'cursors')).then(snap=>{
+      snap.forEach(card=>card.forEach(u=>{
         if (u.val() < cut) zap(card.key, u.key);
       }));
     });
@@ -1094,11 +1092,18 @@ async function loadData (phone, silent = false) {
        6) Ajustes finais de tela e timers
     ---------------------------------------------------------- */
     if (!silent){
-      welcome.classList.add('hidden');
-      step2  .classList.add('hidden');
-      step3  .classList.remove('hidden');
-      showMsg('Dados recebidos com sucesso!');
+    const hasQty = Object.values(data.sizes).some(q => q > 0);
+
+    welcome.classList.add('hidden');
+    if (hasQty){
+      step2.classList.add   ('hidden');   // já existe quantidade → vai p/ infos
+      step3.classList.remove('hidden');
+      showMsg('Dados recebidos com sucesso!');   // mostra aviso só aqui
+    } else {
+      step2.classList.remove('hidden');   // sem quantidades → permanece no passo 2
+      step3.classList.add   ('hidden');
     }
+  }
 
     localUpdatedAt = updatedAt;
     currentPhone   = phone;
