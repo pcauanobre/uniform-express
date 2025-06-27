@@ -477,23 +477,49 @@ function showTelModal(action,title){
 }
 telCancel.onclick=()=>modalTel.classList.add('hidden');
 
-telOk.onclick=async()=>{
-  const phone=telInput.value.trim();
-  if(!/^\d{11}$/.test(phone)){ showMsg('Telefone inválido!'); return; }
+telOk.onclick = async () => {
+  /* -----------------------------------------------------------
+     1) Validação básica do telefone
+  ----------------------------------------------------------- */
+  const phone = telInput.value.trim();
+  if (!/^\d{11}$/.test(phone)) {          // 11 dígitos exatos
+    showMsg('Telefone inválido!');
+    return;
+  }
   modalTel.classList.add('hidden');
 
-  if(telAction==='view'){
-    if(!await loadDataView(phone)) showMsg('Nenhum pedido encontrado para esse telefone.');
+  /* -----------------------------------------------------------
+     2) Se vier de “Ver Pedido” (modo só-leitura)
+  ----------------------------------------------------------- */
+  if (telAction === 'view') {
+    if (!await loadDataView(phone))
+      showMsg('Nenhum pedido encontrado para esse telefone.');
     return;
   }
 
-  currentPhone=phone;
-  const snap=await get(child(ref(db),'pedidos/'+phone));
-  if(snap.exists()) await loadData(phone);
-  else{
-    await initData(phone);
-    localUpdatedAt=Date.now(); startSync();
-    welcome.classList.add('hidden'); step2.classList.remove('hidden'); buildSizeInputs();
+  /* -----------------------------------------------------------
+     3) MODO EDIÇÃO  — ANTES de mudar o telefone:
+        • pára o polling do pedido antigo
+        • zera o cache local (força novo download)
+  ----------------------------------------------------------- */
+  clearInterval(syncTimer);   // pára o intervalo do telefone anterior
+  localUpdatedAt = 0;         // obriga loadData() a refazer tudo
+
+  /* -----------------------------------------------------------
+     4) Carrega (ou cria) o pedido novo
+  ----------------------------------------------------------- */
+  currentPhone = phone;
+
+  const snap = await get(child(ref(db), 'pedidos/' + phone));
+  if (snap.exists()) {
+    await loadData(phone);           // já havia pedido → carrega
+  } else {
+    await initData(phone);           // cria “esqueleto” vazio
+    localUpdatedAt = Date.now();
+    startSync();                     // inicia o polling
+    welcome.classList.add('hidden');
+    step2.classList.remove('hidden');
+    buildSizeInputs();               // desenha inputs zerados
   }
 };
 
@@ -807,6 +833,17 @@ function addUniformRow(
 }
 
 
+/* ------------------------------------------------------------------
+   Conta quantos cartões existem de cada tamanho
+------------------------------------------------------------------ */
+function countUniforms () {
+  const out = Object.fromEntries(tamanhos.map(t => [t, 0]));
+  uniformList.querySelectorAll('[data-size]')
+             .forEach(c => out[c.dataset.size]++);
+  return out;
+}
+
+
 /* -------- ordena por tamanho -------- */
 function resortRows(){
   const rows=[...uniformList.children];
@@ -917,7 +954,12 @@ async function loadData (phone, silent = false) {
       return;
     }
 
-    const { data, updatedAt } = snap.val();
+    const raw       = snap.val() || {};
+    const data      = raw.data || {};
+    data.sizes      ??= Object.fromEntries(tamanhos.map(t => [t, 0]));
+    data.uniforms   ??= [];
+    const updatedAt = raw.updatedAt || 0;
+
     if (updatedAt <= localUpdatedAt) return;      // nada novo desde a última vez
 
     /* ------------------------------------------------------------------
@@ -1054,7 +1096,11 @@ toStep3Btn.onclick = () => {
   step3.classList.remove('hidden');
 };
 qtyBack.onclick  = ()=>{ step2.classList.add('hidden'); welcome.classList.remove('hidden'); currentPhone=null; localUpdatedAt=0; clearInterval(syncTimer); };
-backBtn.onclick  = ()=>{ step3.classList.add('hidden'); step2.classList.remove('hidden'); };
+backBtn.onclick = () => {
+  buildSizeInputs( countUniforms() );   // redesenha inputs do passo 2
+  step3.classList.add('hidden');
+  step2.classList.remove('hidden');
+};
 
 /* ------------------------------------------------------------------
    XX) Texto para WhatsApp — cabeçalhos e separadores
@@ -1118,7 +1164,21 @@ cancelSend.onclick = () => modalConfirmSend.classList.add('hidden');
 
 
 /* -------- excluir uniforme ---------- */
-delYes.onclick=()=>{ if(modalTarget){ modalTarget.remove(); updateSeq(); scheduleSave(); } modalDel.classList.add('hidden'); buildFilter();applyFilter(); };
+delYes.onclick = () => {
+  if (modalTarget) {
+    modalTarget.remove();
+    updateSeq();
+
+    /* se o passo 2 estiver na tela, atualiza inputs na hora */
+    if (!step2.classList.contains('hidden')) {
+      buildSizeInputs( countUniforms() );
+    }
+    scheduleSave();
+  }
+  modalDel.classList.add('hidden');
+  buildFilter(); applyFilter();
+};
+
 delNo.onclick = ()=>modalDel.classList.add('hidden');
 
 /* ---------- sincronizar cards -------- */
