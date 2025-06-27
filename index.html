@@ -99,7 +99,7 @@
     </p>
     <div class="flex gap-4">
       <button id="sendNow" class="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700">Continuar</button>
-      <button id="cancelSend" class="flex-1 py-2 bg-gray-200 text-black rounded-lg font-bold hover:bg-gray-300">Cancelar</button>
+      <button id="cancelSend" class="flex-1 py-2 bg-gray-200 text-black rounded-lg font-bold hover:bg-gray-300">Não sou o<br>responsável.</button>
     </div>
   </div>
 </div>
@@ -1119,7 +1119,7 @@ async function loadData (phone, silent = false) {
 
 
 /* --------------- navegação --------------- */
-startBtn.onclick = ()=>showTelModal(null,'Por favor, informe o telefone<br>do responsável pelo pedido.');
+startBtn.onclick = ()=>showTelModal(null,'Por favor, informe o telefone<br>do responsável pelo pedido.<br>Ex: 85912345678');
 viewBtn.onclick  = ()=>showTelModal('view','Informe o telefone<br>do responsável para visualizar');
 
 /* --------------- navegação --------------- */
