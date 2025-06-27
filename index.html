@@ -404,12 +404,15 @@ function setupPresenceTracking () {
   });
 
   /* ---------- bloqueia clique em card travado ---------- */
-  uniformList.addEventListener('pointerdown', e=>{
-    if (e.target.closest('[data-locked="1"]')){
-      e.preventDefault();
-      showMsg(warn);
-    }
+  /* bloqueia apenas no click: não atrapalha scroll no mobile */
+  uniformList.addEventListener('click', e => {
+    const locked = e.target.closest('[data-locked="1"]');
+    if (!locked) return;
+
+    e.preventDefault();          // evita abrir o select/input
+    showMsg(warn);               // mesma mensagem já declarada
   }, true);
+
 
   /* ---------- GC ---------- */
   setInterval(()=>{
@@ -662,7 +665,15 @@ function OptionList(val){
   s.className='w-full md:w-40 py-3 px-2 border rounded-lg shadow bg-white mb-2 md:mb-0';
   tamanhos.forEach(t=>s.add(new Option(t,t)));
   s.value=val;
-  s.onchange=()=>{ s.closest('[data-size]').dataset.size=s.value; resortRows(); buildFilter();applyFilter(); scheduleSave(); };
+  s.onchange = () => {
+    s.closest('[data-size]').dataset.size = s.value;
+    resortRows();
+    buildFilter();
+    applyFilter();
+    reflectSizesFromCards();     //  << NOVO
+    scheduleSave();
+  };
+
   return {el:s};
 }
 function inputTxt(ph,val,cls='w-full md:flex-1'){
@@ -829,7 +840,11 @@ function addUniformRow(
   if (withShort) { shortBt.click(); row.querySelector('.shortSel').value = withShort; }
   if (obs)       { obsBt .click(); row.querySelector('.obsBox' ).value = obs;        }
 
-  resortRows(); updateSeq(); scheduleSave();
+  resortRows();
+  updateSeq();
+  reflectSizesFromCards();   //  << NOVO
+  scheduleSave();
+
 }
 
 
@@ -939,65 +954,64 @@ async function saveData(phone){
 /* ---------------- carregar do Firebase --------------- */
 async function loadData (phone, silent = false) {
   try {
-    /* ------------------------------------------------------------------
-       0) Estado visual ANTES de limpar a lista
-    ------------------------------------------------------------------ */
-    const prevFilter = activeFilter;              // tamanho que o usuário estava vendo
-    const prevScroll = uniformList.scrollTop;     // posição vertical do scroll
+    /* ----------------------------------------------------------
+       0) Lembra estado visual atual
+    ---------------------------------------------------------- */
+    const prevFilter = activeFilter;           // qual tamanho estava filtrado
+    const prevScroll = uniformList.scrollTop;  // posição do scroll
 
-    /* ------------------------------------------------------------------
-       1) Busca dados no Firebase
-    ------------------------------------------------------------------ */
+    /* ----------------------------------------------------------
+       1) Busca registro no Firebase
+    ---------------------------------------------------------- */
     const snap = await get(child(ref(db), `pedidos/${phone}`));
-    if (!snap.exists()) {                         // nenhum pedido
+    if (!snap.exists()) {
       if (!silent) showMsg('Nenhum pedido encontrado.');
       return;
     }
 
-    const raw       = snap.val() || {};
-    const data      = raw.data || {};
+    /* —— fallback seguro —— */
+    const raw       = snap.val()     || {};
+    const data      = raw.data       || {};
     data.sizes      ??= Object.fromEntries(tamanhos.map(t => [t, 0]));
     data.uniforms   ??= [];
-    const updatedAt = raw.updatedAt || 0;
+    const updatedAt = raw.updatedAt  || 0;
 
-    if (updatedAt <= localUpdatedAt) return;      // nada novo desde a última vez
+    if (updatedAt <= localUpdatedAt) return;   // nada novo
 
-    /* ------------------------------------------------------------------
-       2) Reconstrói interface (inputs de tamanho + cards)
-          – bloqueia scheduleSave() enquanto monta a UI
-    ------------------------------------------------------------------ */
-    isLoading = true;                             // 🛑 suspende salvamentos
+    /* ----------------------------------------------------------
+       2) Reconstrói UI —— trava o auto-save enquanto monta
+    ---------------------------------------------------------- */
+    isLoading = true;                          // 👈 pausa scheduleSave()
 
-    buildSizeInputs(data.sizes);                  // lado esquerdo (passo 2)
+    buildSizeInputs(data.sizes);               // inputs do passo 2
 
-    uniformList.innerHTML = '';                   // zera lista de cards
+    uniformList.innerHTML = '';                // limpa cartões
     data.uniforms.forEach(u =>
       addUniformRow(u.size, u.name, u.number, u.short, u.obs, u.id)
     );
 
-    isLoading = false;                            // ✅ libera salvamentos
+    isLoading = false;                         // 🔓 libera scheduleSave()
 
-    /* ------------------------------------------------------------------
-       3) Barra de filtro
-          – buildFilter() pode mudar activeFilter → voltamos depois
-    ------------------------------------------------------------------ */
+    /* mantém contagem dos inputs em sincronia */
+    reflectSizesFromCards();                   // ← nova função
+
+    /* ----------------------------------------------------------
+       3) Filtro de tamanhos
+    ---------------------------------------------------------- */
     buildFilter();
-
     if (
       prevFilter &&
       [...uniformList.children].some(c => c.dataset.size === prevFilter)
-    ) {
-      activeFilter = prevFilter;                  // volta para o filtro antigo
+    ){
+      activeFilter = prevFilter;
       buildFilter();
     }
+    applyFilter();
+    updateSeq();
 
-    applyFilter();                                // esconde/mostra conforme filtro
-    updateSeq();                                  // renumera “Uniforme 01…”
-
-    /* ------------------------------------------------------------------
-       4) Re-aplica presença simultânea IMEDIATAMENTE
-          (sem esperar o próximo evento onValue)
-    ------------------------------------------------------------------ */
+    /* ----------------------------------------------------------
+       4) Presença simultânea (aplica instantaneamente)
+    ---------------------------------------------------------- */
     const cursorSnap = await get(ref(db, 'cursors'));
     (function applyPresence(snap) {
       const now = Date.now();
@@ -1008,68 +1022,58 @@ async function loadData (phone, silent = false) {
         card.style.removeProperty('--clr');
         card.style.removeProperty('border');
         card.querySelector('.presence-badge')?.remove();
-        card.querySelectorAll('[data-locked]')
-             .forEach(el => el.removeAttribute('data-locked'));
+        card.querySelectorAll('[data-locked]').forEach(el => el.removeAttribute('data-locked'));
       });
 
-      /* aplica estados atuais   */
+      /* pinta estados atuais */
       snap.forEach(cardSnap => {
         const rowId = cardSnap.key;
-        let someoneElse = false;
+        const card  = uniformList.querySelector(`[data-row-id="${rowId}"]`);
+        if (!card) return;
 
-        cardSnap.forEach(userSnap => {
-          const exp = userSnap.val();
-          if (exp < now)        return;           // expirado
-          if (userSnap.key === USER_ID) return;   // não mostra para si
+        let busy = false;
+        cardSnap.forEach(u => {
+          if (u.val() < now)          return;   // expirado
+          if (u.key === USER_ID)      return;   // eu mesmo
+          busy = true;
 
-          const card = uniformList.querySelector(`[data-row-id="${rowId}"]`);
-          if (!card) return;
-
-          someoneElse = true;
-
-          const clr = colorFromId(userSnap.key);
+          const clr = colorFromId(u.key);
           card.classList.add('presence-outline');
           card.style.setProperty('--clr', clr);
-          card.style.setProperty('border', `2px dashed ${clr}`, 'important');
-
-          if (!card.querySelector('.presence-badge')) {
-            const badge = document.createElement('span');
-            badge.className = 'presence-badge';
-            badge.textContent = 'Tem alguém aqui';
-            card.appendChild(badge);
+          if (!card.querySelector('.presence-badge')){
+            const b = document.createElement('span');
+            b.className  = 'presence-badge';
+            b.textContent= 'Tem alguém aqui';
+            card.appendChild(b);
           }
         });
 
-        /* bloqueia / desbloqueia campos */
-        const card = uniformList.querySelector(`[data-row-id="${rowId}"]`);
-        if (card) {
-          card.querySelectorAll('input,select,textarea,button')
-              .forEach(el => el.disabled = someoneElse);
-          if (someoneElse) card.dataset.locked = '1';
-          else             delete card.dataset.locked;
-        }
+        card.querySelectorAll('input,select,textarea,button')
+            .forEach(el => el.disabled = busy);
+        if (busy) card.dataset.locked = '1';
+        else      delete card.dataset.locked;
       });
     })(cursorSnap);
 
-    /* ------------------------------------------------------------------
-       5) Devolve scroll exatamente onde estava
-    ------------------------------------------------------------------ */
+    /* ----------------------------------------------------------
+       5) Restaura scroll
+    ---------------------------------------------------------- */
     uniformList.scrollTop = prevScroll;
 
-    /* ------------------------------------------------------------------
-       6) Ajustes de tela, timers e mensagens
-    ------------------------------------------------------------------ */
-    if (!silent) {
+    /* ----------------------------------------------------------
+       6) Ajustes finais de tela e timers
+    ---------------------------------------------------------- */
+    if (!silent){
       welcome.classList.add('hidden');
-      step2.classList.add('hidden');
-      step3.classList.remove('hidden');
+      step2  .classList.add('hidden');
+      step3  .classList.remove('hidden');
+      showMsg('Dados recebidos com sucesso!');
     }
 
     localUpdatedAt = updatedAt;
     currentPhone   = phone;
+    if (!syncTimer) startSync();               // evita múltiplos intervalos
 
-    if (!syncTimer) startSync();                  // evita múltiplos intervalos
-    if (!silent) showMsg('Dados recebidos com sucesso!');
   } catch (e) {
     if (!silent) showMsg('Erro ao carregar: ' + e.message);
   }
@@ -1167,16 +1171,13 @@ cancelSend.onclick = () => modalConfirmSend.classList.add('hidden');
 delYes.onclick = () => {
   if (modalTarget) {
     modalTarget.remove();
+    reflectSizesFromCards();   //  << NOVO
     updateSeq();
-
-    /* se o passo 2 estiver na tela, atualiza inputs na hora */
-    if (!step2.classList.contains('hidden')) {
-      buildSizeInputs( countUniforms() );
-    }
     scheduleSave();
   }
   modalDel.classList.add('hidden');
-  buildFilter(); applyFilter();
+  buildFilter();
+  applyFilter();
 };
 
 delNo.onclick = ()=>modalDel.classList.add('hidden');
@@ -1190,8 +1191,29 @@ function syncUniforms(){
     const have=current[s]?current[s].length:0;
     for(let i=0;i<qty-have;i++) addUniformRow(s);
   });
-  buildFilter();applyFilter();updateSeq();
+  buildFilter();applyFilter();updateSeq();reflectSizesFromCards();   //  << NOVO
+
 }
+
+/* ------------------------------------------------------------------
+   Mantém os inputs de quantidade (Passo 2) em sincronia com
+   a lista de cartões (Passo 3).
+------------------------------------------------------------------ */
+function reflectSizesFromCards () {
+  const counts = Object.fromEntries(tamanhos.map(t => [t, 0]));
+
+  /* conta quantos cartões existem de cada tamanho */
+  uniformList.querySelectorAll('[data-size]').forEach(c => {
+    counts[c.dataset.size]++;
+  });
+
+  /* escreve nos inputs */
+  sizeForm.querySelectorAll('input').forEach(inp => {
+    const v = counts[inp.dataset.tam];
+    inp.value = v ? v : '';                 // 0 → input vazio
+  });
+}
+
 
 
 /* --------------- teste ----------------- */
