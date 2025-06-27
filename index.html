@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>UniformExpress – Personalização de Uniformes</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+  /* ============ animações genéricas ============ */
+  @keyframes fadeIn        { from{opacity:0;transform:translateY(12px)}
+                            to  {opacity:1;transform:translateY(0)} }
+  @keyframes fadeSlideIn   { from{opacity:0;transform:translateY(4px)}
+                            to  {opacity:1;transform:translateY(0)} }
+  @keyframes fadeSlideOut  { from{opacity:1;transform:translateY(0)}
+                            to  {opacity:0;transform:translateY(-4px)} }
+
+  .animate-fadeIn{ animation:fadeIn .35s ease-out }
+  .saveMsg.show   { animation:fadeSlideIn  .25s forwards }
+  .saveMsg.hide   { animation:fadeSlideOut .25s forwards }
+
+  /* ============ foco em inputs ============ */
+  input:focus{
+    outline:2px solid #6366f1;   /* indigo-500 (Tailwind) */
+    outline-offset:0;
+  }
+
+  /* ============ presença simultânea ============ */
+  @keyframes pulseBorder{ to { opacity:.4 } }   /* (reservado p/ animações futuras) */
+
+  /* --- contorno do cartão quando ocupado --- */
+  .presence-outline{
+    --clr:#f43f5e;               /* cor padrão − trocada via JS */
+    position:relative;
+    border:2px dashed var(--clr) !important; /* contorno principal             */
+    box-sizing:border-box;                    /* evita “salto” de 2 px          */
+    box-shadow:none !important;               /* remove a sombra cinza original */
+  }
+
+  /* --- badge “Tem alguém aqui” --- */
+  .presence-badge{
+    position:absolute;
+    right:4px; top:-10px;          /* canto superior-direito do card */
+    padding:0 4px;
+    font-size:11px;
+    line-height:16px;
+    border-radius:3px;
+    background:var(--clr);
+    color:#fff;
+    pointer-events:none;
+    user-select:none;
+  }
+  </style>
+</head>
+
+<body class="bg-gradient-to-br from-sky-50 to-indigo-100 overflow-x-hidden">
+
+<!-- ================================================================= MODAIS ================================================================ -->
+<!-- excluir uniforme -->
+<div id="modalDel" class="hidden fixed inset-0 bg-black/40 backdrop-blur flex items-center justify-center z-40">
+  <div class="bg-white rounded-xl p-6 w-80 shadow-xl text-center space-y-6 animate-fadeIn">
+    <p class="text-lg font-medium">Deseja realmente excluir este uniforme?</p>
+    <div class="flex gap-4">
+      <button id="delYes" class="flex-1 py-2 text-sm bg-red-600 text-white rounded-lg font-bold hover:bg-red-700">Sim</button>
+      <button id="delNo"  class="flex-1 py-2 text-sm bg-gray-200 text-gray-800 rounded-lg font-bold hover:bg-gray-300">Não</button>
+    </div>
+  </div>
+</div>
+
+<!-- excluir pedido -->
+<div id="modalDelPedido" class="hidden fixed inset-0 bg-black/40 backdrop-blur flex items-center justify-center z-50">
+  <div class="bg-white rounded-xl p-6 w-80 shadow-xl text-center space-y-6 animate-fadeIn">
+    <p class="text-lg font-medium">Tem certeza que quer excluir a personalização?</p>
+    <div class="flex gap-4">
+      <button id="delPedidoYes" class="flex-1 py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700">Sim</button>
+      <button id="delPedidoNo"  class="flex-1 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold hover:bg-gray-300">Não</button>
+    </div>
+  </div>
+</div>
+
+<!-- aviso antes de enviar ao WhatsApp -->
+<div id="modalConfirmSend" class="hidden fixed inset-0 bg-black/40 backdrop-blur flex items-center justify-center z-40">
+  <div class="bg-white rounded-xl p-6 w-80 shadow-xl text-center space-y-6 animate-fadeIn">
+    <p class="text-lg font-medium leading-relaxed">
+      Seus dados foram salvos.<br>
+      Apenas o responsável pelo pedido deve enviar<br>
+      a lista para o atendente.
+    </p>
+    <div class="flex gap-4">
+      <button id="sendNow" class="flex-1 py-2 bg-emerald-600 text-white rounded-lg font-bold hover:bg-emerald-700">Continuar</button>
+      <button id="cancelSend" class="flex-1 py-2 bg-gray-200 text-black rounded-lg font-bold hover:bg-gray-300">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- mensagem simples -->
+<div id="modalMsg" class="hidden fixed inset-0 bg-black/40 backdrop-blur flex items-center justify-center z-40">
+  <div class="bg-white rounded-xl p-6 w-80 shadow-xl text-center space-y-6 animate-fadeIn">
+    <p id="msgText" class="text-lg font-medium leading-snug"></p>
+    <button id="msgOk" class="w-full py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700">OK</button>
+  </div>
+</div>
+
+<!-- telefone -->
+<div id="modalTel" class="hidden fixed inset-0 bg-black/40 backdrop-blur flex items-center justify-center z-30">
+  <div class="bg-white rounded-xl p-6 w-80 shadow-xl space-y-6 animate-fadeIn">
+    <p id="telTitle" class="text-lg font-medium text-center">
+      Por favor, informe o telefone<br>do responsável pelo pedido.
+    </p>
+    <input id="telInput" type="tel" pattern="\d{11}" maxlength="11"
+           class="w-full py-3 px-4 border rounded-lg text-center text-lg shadow focus:outline-indigo-500"
+           placeholder="85999999999">
+    <div class="flex gap-4">
+      <button id="telOk"     class="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700">Continuar</button>
+      <button id="telCancel" class="flex-1 py-2 bg-gray-200 text-gray-800 rounded-lg font-bold hover:bg-gray-300">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- VISUALIZAR PEDIDO -->
+<div id="modalView"
+     class="hidden fixed inset-0 bg-black/40 backdrop-blur flex items-center justify-center z-40">
+  <div class="bg-white rounded-xl w-11/12 max-w-lg h-[90vh] p-6 shadow-xl flex flex-col space-y-4 animate-fadeIn">
+
+    <h2 class="text-2xl font-bold text-center">Pedido</h2>
+    <div id="viewScroll" class="flex-1 overflow-y-auto space-y-16"></div>
+
+    <div class="flex flex-col gap-3">
+      <button id="delPedidoBtn"
+              class="w-full py-2 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700">Excluir&nbsp;Pedido</button>
+      <button id="viewClose"
+              class="w-full py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700">Fechar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================================= TELAS ================================================================== -->
+<!-- BEM-VINDO -->
+<section id="welcome" class="h-dvh w-full max-w-lg mx-auto px-4 flex flex-col items-center justify-center text-center gap-4 animate-fadeIn">
+  <h1 class="text-4xl font-extrabold">Bem-vindo ao <span class="text-indigo-600">UniformExpress</span></h1>
+  <p class="text-lg">Preencha seu pedido em <br>apenas 3 passos</p>
+
+  <div class="flex flex-col items-center gap-3">
+    <button id="startBtn"
+            class="w-60 py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 text-base">
+      Começar
+    </button>
+    <button id="viewBtn"
+            class="w-52 py-2 bg-gray-200 text-black rounded-lg shadow hover:bg-gray-300 text-sm font-semibold">
+      Ver&nbsp;Pedido
+    </button>
+  </div>
+</section>
+
+<!-- PASSO 2 – QUANTIDADES -->
+<section id="step2" class="hidden h-dvh w-full max-w-lg mx-auto px-4 flex flex-col animate-fadeIn">
+  <h2 class="text-3xl font-bold text-center mt-4 mb-2 flex-none">Quantidades por Tamanho</h2>
+
+  <!-- espaço fixo p/ aviso – altura = 20px -->
+  <div class="h-5 mb-2 relative">
+    <p id="saveMsgStep2"
+       class="saveMsg absolute inset-0 flex items-center justify-center
+              text-emerald-600 text-sm font-semibold opacity-0">
+      ✔ Salvo automaticamente
+    </p>
+  </div>
+
+  <div class="flex-1 min-h-0 overflow-y-auto">
+    <form id="sizeForm" class="space-y-4 pb-2"></form>
+  </div>
+
+  <div class="flex flex-col gap-3 mt-4 flex-none">
+    <button id="toStep3"
+            class="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg text-base">
+      Continuar
+    </button>
+    <button id="qtyBack"
+            class="w-full py-2 bg-gray-200 text-black rounded-lg shadow hover:bg-gray-300 text-sm font-semibold">
+      Voltar
+    </button>
+  </div>
+</section>
+
+<!-- PASSO 3 – UNIFORMES -->
+<section id="step3" class="hidden h-dvh w-full max-w-lg mx-auto px-4 flex flex-col animate-fadeIn">
+  <h2 class="text-3xl font-bold text-center mt-4 mb-1 flex-none">Informações</h2>
+
+  <!-- espaço fixo p/ aviso – altura = 20px -->
+  <div class="h-5 mb-2 relative">
+    <p id="saveMsgStep3"
+       class="saveMsg absolute inset-0 flex items-center justify-center
+              text-emerald-600 text-sm font-semibold opacity-0">
+      ✔ Salvo automaticamente
+    </p>
+  </div>
+
+  <div id="filterBar"   class="flex flex-wrap gap-2 justify-center mb-3 flex-none"></div>
+  <div id="uniformList" class="flex-1 min-h-0 overflow-y-auto pr-2 space-y-16"></div>
+
+  <div class="flex flex-col md:flex-row gap-4 mt-3 flex-none">
+    <button id="concludeBtn"
+            class="flex-1 py-3 bg-emerald-600 text-white rounded-xl font-bold shadow hover:bg-indigo-700 text-base">
+      Concluir
+    </button>
+    <button id="backBtn"
+            class="flex-1 py-3 bg-gray-200 text-black rounded-xl font-semibold shadow hover:bg-gray-300 text-base">
+      Voltar
+    </button>
+    <button id="testBtn"
+            class="flex-1 py-3 bg-yellow-500 text-white rounded-xl font-semibold shadow hover:bg-yellow-600 text-base">
+      Preencher Teste
+    </button>
+  </div>
+</section>
+
+<!-- =============================================================== SCRIPT ================================================================== -->
+<script type="module">
+/* ---------------- Firebase ---------------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getDatabase, ref, set, get, child, remove, onValue } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-database.js";
+const app = initializeApp({
+  apiKey:"AIzaSyD7dTvdjktQEVnewumk5D3w-jBf5zL9_5U",
+  authDomain:"interartuniforme.firebaseapp.com",
+  projectId:"interartuniforme",
+  storageBucket:"interartuniforme.appspot.com",
+  messagingSenderId:"796086410516",
+  appId:"1:796086410516:web:48b23d1fa85b393761f601"
+});
+const db = getDatabase(app);
+
+/* ---------- presença simultânea ---------- */
+const USER_ID = localStorage.getItem('uid')
+            || (crypto.randomUUID?.() || Math.random().toString(36).slice(2));
+localStorage.setItem('uid', USER_ID);
+
+const CURSOR_COLORS = ['#f43f5e','#f97316','#eab308','#10b981',
+                       '#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+
+function colorFromId(id){
+  let h=0;
+  for(const ch of id) h = (h*31 + ch.charCodeAt(0)) & 255;
+  return CURSOR_COLORS[h % CURSOR_COLORS.length];
+}
+
+
+/* -------------- refs / const -------------- */
+const $ = id=>document.getElementById(id);
+const welcome=$('welcome'), step2=$('step2'), step3=$('step3');
+const sizeForm=$('sizeForm'), uniformList=$('uniformList'), filterBar=$('filterBar');
+const startBtn=$('startBtn'), toStep3Btn=$('toStep3'), qtyBack=$('qtyBack');
+const backBtn=$('backBtn'), concludeBtn=$('concludeBtn'), testBtn=$('testBtn');
+const viewBtn=$('viewBtn'), modalView=$('modalView'), viewClose=$('viewClose'), viewScroll=$('viewScroll');
+const delPedidoBtn=$('delPedidoBtn'), modalDelPedido=$('modalDelPedido');
+const delPedidoYes=$('delPedidoYes'), delPedidoNo=$('delPedidoNo');
+const modalDel=$('modalDel'), delYes=$('delYes'), delNo=$('delNo');
+const modalTel=$('modalTel'), telInput=$('telInput'), telOk=$('telOk'), telCancel=$('telCancel');
+const modalMsg=$('modalMsg'), msgText=$('msgText'), msgOk=$('msgOk');
+const modalConfirmSend=$('modalConfirmSend'), sendNow=$('sendNow'), cancelSend=$('cancelSend');
+const saveMsg2=$('saveMsgStep2'), saveMsg3=$('saveMsgStep3');
+
+let currentPhone = null, activeFilter = '', modalTarget = null;
+let localUpdatedAt = 0, saveTimer = null, syncTimer = null;
+let telAction = null;
+
+/* ADD ↓↓↓ */
+let isLoading = false;        // ← true enquanto o loadData reconstrói a tela
+
+
+const tamanhos=['2 anos','4 anos','6 anos','8 anos','10 anos','12 anos','PP','P','M','G','GG','XG','XG2','XG3'];
+
+/* ------------------------------------------------------------------
+   Ping rápido: atualiza APENAS o campo updatedAt para que
+   outras abas reconstruam a interface mesmo sem ter havido save().
+------------------------------------------------------------------ */
+function pingUpdate (phone) {
+  if (!phone) return;
+  set(ref(db, `pedidos/${phone}/updatedAt`), Date.now()).catch(()=>{});
+}
+
+
+
+/* ========================================================================
+   PRESENÇA SIMULTÂNEA  —  tudo em um único lugar, com logs detalhados
+   • marca /cursors/<rowId>/<USER_ID>   = timestamp + 12 s
+   • renova a cada 8 s enquanto o usuário mantém foco no card
+   • observa o nó /cursors em tempo-real e pinta os cartões
+   • limpa registros expirados a cada 30 s
+======================================================================== */
+function setupPresenceTracking () {
+
+  /* ---------- Firebase helpers ---------- */
+  const pRef = (row, uid = USER_ID) => ref(db, `cursors/${row}/${uid}`);
+  const bump = (row, ttl)           => set(pRef(row), Date.now()+ttl).catch(()=>{});
+  const zap  = (row, uid)           => remove(pRef(row, uid)).catch(()=>{});
+
+  /* ---------- parâmetros ---------- */
+  const BEAT      = 2000;   // envia a cada 2 s
+  const TTL_BEAT  = 8000;   // 8 s de “vida” enquanto digitando
+  const TTL_GRACE = 3000;   // 3 s depois de sair do card
+
+  /* ---------- estado ---------- */
+  let editingRow = null;
+  let keepAlive  = null;
+  let graceTimer = null;
+
+  /* ---------- limpa UI local ---------- */
+  function clearCardUI (rowId){
+    const c = uniformList.querySelector(`[data-row-id="${rowId}"]`);
+    if (!c) return;
+    c.classList.remove('presence-outline');
+    c.style.removeProperty('--clr');
+    c.style.border      = '';
+    c.style.boxShadow   = '';          //  ←  NOVO: devolve a sombra original
+    c.querySelector('.presence-badge')?.remove();
+    delete c.dataset.locked;
+    c.querySelectorAll('input,select,textarea,button')
+      .forEach(el => el.disabled = false);
+  }
+
+
+  /* ---------- começa edição ---------- */
+  function beginEdit (card) {
+    const row = card.dataset.rowId;
+    if (row === editingRow) return;
+
+    /* libera o anterior */
+    clearInterval(keepAlive);
+    clearTimeout(graceTimer);
+    if (editingRow) {
+      zap(editingRow, USER_ID);
+      clearCardUI(editingRow);
+    }
+
+    /* novo cartão */
+    editingRow = row;
+    bump(row, TTL_BEAT);
+    keepAlive = setInterval(() => bump(row, TTL_BEAT), BEAT);
+  }
+
+  /* input / change dentro do card → começa edição */
+  ['input','change'].forEach(evt =>
+    uniformList.addEventListener(evt, e=>{
+      const card = e.target.closest('[data-row-id]');
+      if (card && !card.dataset.locked) beginEdit(card);
+    }, true)
+  );
+
+  /* focus out – grace of 3 s */
+  uniformList.addEventListener('focusout', e=>{
+    const card = e.target.closest('[data-row-id]');
+    if (!card || card.dataset.rowId !== editingRow) return;
+
+    setTimeout(()=>{
+      if (card.contains(document.activeElement)) return;  // ainda dentro
+
+      clearInterval(keepAlive);
+      graceTimer = setTimeout(()=>{
+        zap(editingRow, USER_ID);
+        clearCardUI(editingRow);
+        editingRow = null;
+      }, TTL_GRACE);
+    },0);
+  }, true);
+
+  /* ---------- listener Firebase ---------- */
+  const warn = 'Outro usuário está editando este uniforme.';
+  onValue(ref(db,'cursors'), snap=>{
+    const now = Date.now();
+
+    /* limpa tudo antes de aplicar estados novos */
+    uniformList.querySelectorAll('.presence-outline')
+      .forEach(c => clearCardUI(c.dataset.rowId));
+
+    /* aplica presença */
+    snap.forEach(cardSnap=>{
+      const card = uniformList.querySelector(`[data-row-id="${cardSnap.key}"]`);
+      if (!card) return;
+
+      let busy = false;
+      cardSnap.forEach(u=>{
+        if (u.val() < now) return;
+        if (u.key === USER_ID) return;
+        busy = true;
+
+        const clr = colorFromId(u.key);
+        card.classList.add('presence-outline');
+        card.style.setProperty('--clr', clr);
+        card.style.boxShadow = 'none';      //  ←  NOVO: mata a sombrinha cinza
+
+
+        if (!card.querySelector('.presence-badge')){
+          const b = document.createElement('span');
+          b.className = 'presence-badge';
+          b.textContent = 'Tem alguém aqui';
+          card.appendChild(b);
+        }
+      });
+
+      if (busy){
+        card.dataset.locked = '1';
+        card.querySelectorAll('input,select,textarea,button')
+            .forEach(el => el.disabled = true);
+      }
+    });
+  });
+
+  /* ---------- bloqueia clique em card travado ---------- */
+  uniformList.addEventListener('pointerdown', e=>{
+    if (e.target.closest('[data-locked="1"]')){
+      e.preventDefault();
+      showMsg(warn);
+    }
+  }, true);
+
+  /* ---------- GC ---------- */
+  setInterval(()=>{
+    const cut = Date.now();
+    get(ref(db,'cursors')).then(snap=>{
+      snap.forEach(card=>card.forEach(u=>{
+        if (u.val() < cut) zap(card.key, u.key);
+      }));
+    });
+  }, 30_000);
+}
+
+/* ---------------- pop-up util ------------- */
+const showMsg=t=>{ msgText.textContent=t; modalMsg.classList.remove('hidden'); };
+
+
+msgOk.onclick=()=>modalMsg.classList.add('hidden');
+
+/* ------------- auto-save aviso ----------- */
+/* ----------- auto-save / “✔ Salvo automaticamente” ----------- */
+function showAutoSave () {
+  // escolhe o balão certo (passo 2 ou passo 3)
+  const m = step2.classList.contains('hidden') ? saveMsg3 : saveMsg2;
+
+  /*── 1. cancela qualquer animação/hide pendente ───────────────*/
+  clearTimeout(m._t);                   // aborta o timer anterior
+  m.classList.remove('show', 'hide');   // remove estados atuais
+
+  /*── 2. força reflow e dispara animação de novo ───────────────*/
+  void m.offsetWidth;                   // reflow – garante reinício
+  m.classList.add('show');              // fade-in
+
+  /*── 3. agenda o fade-out ─────────────────────────────────────*/
+  m._t = setTimeout(() => {
+    m.classList.remove('show');
+    m.classList.add('hide');            // fade-out
+  }, 1500);                             // 2 s visível
+}
+
+
+
+/* ---------------- auto-save --------------- */
+/* Agora grava no exato momento em que o usuário conclui
+   alguma ação (alterou valor, mudou select, etc.).
+   Não há mais espera ou debounce de 500 ms.              */
+function scheduleSave () {
+  if (isLoading || !currentPhone) return;
+  saveData(currentPhone);          // grava no Firebase (updatedAt muda)
+  showAutoSave();
+}
+
+
+function startSync () {
+  clearInterval(syncTimer);
+  if (currentPhone)
+    syncTimer = setInterval(()=> loadData(currentPhone,true), 1500); // 1,5 s
+}
+
+
+
+/* -------------- telefone modal ------------ */
+function showTelModal(action,title){
+  telAction=action; telInput.value=''; $('telTitle').innerHTML=title;
+  modalTel.classList.remove('hidden'); telInput.focus();
+}
+telCancel.onclick=()=>modalTel.classList.add('hidden');
+
+telOk.onclick=async()=>{
+  const phone=telInput.value.trim();
+  if(!/^\d{11}$/.test(phone)){ showMsg('Telefone inválido!'); return; }
+  modalTel.classList.add('hidden');
+
+  if(telAction==='view'){
+    if(!await loadDataView(phone)) showMsg('Nenhum pedido encontrado para esse telefone.');
+    return;
+  }
+
+  currentPhone=phone;
+  const snap=await get(child(ref(db),'pedidos/'+phone));
+  if(snap.exists()) await loadData(phone);
+  else{
+    await initData(phone);
+    localUpdatedAt=Date.now(); startSync();
+    welcome.classList.add('hidden'); step2.classList.remove('hidden'); buildSizeInputs();
+  }
+};
+
+/* cria registro vazio */
+async function initData(phone){
+  await set(ref(db,'pedidos/'+phone),{
+    data:{sizes:Object.fromEntries(tamanhos.map(t=>[t,0])), uniforms:[]},
+    updatedAt:Date.now()
+  });
+}
+
+/* ---------------- visualizar -------------- */
+async function loadDataView(phone){
+  try{
+    const snap=await get(child(ref(db),'pedidos/'+phone));
+    if(!snap.exists()) return false;
+    const {data}=snap.val();
+    viewScroll.innerHTML='';
+
+    /* agrupa por tamanho */
+    const bucket={}; data.uniforms.forEach(u=>(bucket[u.size]=bucket[u.size]||[]).push(u));
+
+    let counter=1;
+    tamanhos.forEach(t=>{
+      if(!bucket[t] && !data.sizes[t]) return;
+      const bloc=document.createElement('div'); bloc.className='space-y-4';
+      if(data.sizes[t]>0){
+        const head=document.createElement('h3');
+        head.className='font-bold text-lg';
+        head.textContent=`${t} – ${data.sizes[t]} un.`; bloc.appendChild(head);
+      }
+      (bucket[t]||[]).forEach(u=>{
+        const card=document.createElement('div');
+        card.className='border rounded-lg p-3 shadow bg-sky-50 space-y-2';
+        card.innerHTML=`
+          <div class="font-semibold text-sm">Uniforme ${String(counter).padStart(2,'0')}</div>
+          <div class="text-sm"><span class="font-medium">Nome:</span> ${u.name||'-'}</div>
+          <div class="text-sm"><span class="font-medium">Número:</span> ${u.number||'-'}</div>
+          ${u.short?`<div class="text-sm"><span class="font-medium">Short:</span> ${u.short}</div>`:''}
+          ${u.obs  ?`<div class="text-sm"><span class="font-medium">Obs.:</span> ${u.obs}</div>`:''}
+        `;
+        counter++; bloc.appendChild(card);
+      });
+      viewScroll.appendChild(bloc);
+    });
+
+    modalView.classList.remove('hidden'); currentPhone=phone;
+    return true;
+  }catch(e){ showMsg('Erro ao carregar: '+e.message); return false;}
+}
+viewClose.onclick=()=>modalView.classList.add('hidden');
+
+/* ------ excluir pedido inteiro ------ */
+delPedidoBtn.onclick = ()=>modalDelPedido.classList.remove('hidden');
+delPedidoNo.onclick  = ()=>modalDelPedido.classList.add('hidden');
+delPedidoYes.onclick= async ()=>{
+  try{
+    await remove(ref(db,'pedidos/'+currentPhone));
+    modalDelPedido.classList.add('hidden');
+    modalView.classList.add('hidden');
+    showMsg('Pedido removido.');
+  }catch(e){ showMsg('Erro ao excluir: '+e.message); }
+};
+
+/* -------- inputs de tamanho ---------- */
+/* -------- inputs de tamanho ---------- */
+function buildSizeInputs(preFilled = {}) {
+  sizeForm.innerHTML = '';
+
+  tamanhos.forEach(tam => {
+
+    const row = document.createElement('div');
+    row.className = 'flex items-center gap-4';
+    row.innerHTML = `<label class="w-28 font-medium">${tam}</label>`;
+    sizeForm.appendChild(row);
+
+    const box = document.createElement('div');
+    box.className = 'relative flex-1';
+    row.appendChild(box);
+
+    const inp = document.createElement('input');
+    inp.type        = 'number';
+    inp.min         = 0;
+    inp.max         = 50;
+    inp.placeholder = 'Quantidade';
+    inp.dataset.tam = tam;
+    inp.className   = 'w-full py-4 pl-3 pr-10 text-lg border rounded-lg shadow focus:outline-indigo-500';
+    if (preFilled[tam] > 0) inp.value = preFilled[tam];
+    box.appendChild(inp);
+
+    /* 👇👇 ***ESSA LINHA NOVA resolve o bug*** --------------------------- */
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+
+    /* botões + / – ------------------------------------------------------- */
+    const makeBtn = (txt, pos, delta, color) => {
+    const b = document.createElement('button');
+    b.type        = 'button';
+    b.textContent = txt;
+    b.tabIndex    = -1;
+    b.className =
+      `absolute right-0 ${pos} w-10 h-1/2 flex items-center justify-center
+      border-l border-gray-300 rounded-r-lg shadow text-white font-bold
+      select-none ${color} hover:brightness-110`;
+    if (pos === 'top-0') b.classList.add('border-b');
+
+    // impede foco ao clicar
+    b.addEventListener('mousedown', e => e.preventDefault());
+    b.addEventListener('click', e => {
+      e.preventDefault();
+      const v = Math.min(50, Math.max(0, (parseInt(inp.value) || 0) + delta));
+      inp.value = v;
+      scheduleSave();
+    });
+
+    return b;
+  };
+
+
+    box.appendChild(makeBtn('+', 'top-0', +1, 'bg-green-600'));
+    box.appendChild(makeBtn('–', 'bottom-0', -1, 'bg-red-600'));
+
+    /* saneia digitação livre -------------------------------------------- */
+    const clamp = () => {
+      let v = parseInt(inp.value) || 0;
+      if (v < 0) v = 0;
+      if (v > 50) v = 50;
+      inp.value = v || '';
+    };
+    inp.addEventListener('input', () => { clamp(); scheduleSave(); });
+  });
+}
+
+/* evita qualquer submit do <form> ---------------------------------------- */
+sizeForm.addEventListener('submit', e => e.preventDefault());
+
+
+/* -------- componentes uniforme -------- */
+function OptionList(val){
+  const s=document.createElement('select');
+  s.className='w-full md:w-40 py-3 px-2 border rounded-lg shadow bg-white mb-2 md:mb-0';
+  tamanhos.forEach(t=>s.add(new Option(t,t)));
+  s.value=val;
+  s.onchange=()=>{ s.closest('[data-size]').dataset.size=s.value; resortRows(); buildFilter();applyFilter(); scheduleSave(); };
+  return {el:s};
+}
+function inputTxt(ph,val,cls='w-full md:flex-1'){
+  const i=document.createElement('input');
+  i.placeholder=ph; i.value=val; i.type='text';
+  i.className=`${cls} py-3 px-3 border rounded-lg shadow mb-2 md:mb-0`;
+  i.addEventListener('input',scheduleSave);
+  return i;
+}
+
+/* ---- botão Short ---- */
+function btnShort () {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className =
+    // agora BLOCK → margin-auto funciona 👍
+    'block mx-auto mt-3 w-[80%] md:w-40 py-2 px-4 rounded-lg ' +
+    'text-sm font-medium shadow bg-indigo-600 text-white hover:bg-indigo-700';
+  b.textContent = 'Adicionar Short';
+
+  let sec = null;        // bloco <select> Short
+
+  const setState = (on) => {
+    b.textContent = on ? 'Remover Short' : 'Adicionar Short';
+    b.classList.toggle('bg-indigo-600', !on);
+    b.classList.toggle('hover:bg-indigo-700', !on);
+    b.classList.toggle('text-white',      !on);
+
+    b.classList.toggle('bg-gray-300',   on);
+    b.classList.toggle('hover:bg-gray-400', on);
+    b.classList.toggle('text-black',    on);
+  };
+
+  b.onclick = () => {
+    const row   = b.closest('[data-size]');
+    const obsBt = row.querySelector('.obsBtn');
+
+    if (!sec) {
+      /* bloco centralizado ↓ */
+      sec = document.createElement('div');
+      sec.className =
+        'mt-3 flex flex-wrap items-center justify-center gap-3 w-full';
+      sec.innerHTML = '<label class="font-semibold">Short:</label>';
+
+      const sSel = document.createElement('select');
+      sSel.className =
+        'flex-1 md:flex-none md:w-48 py-2 px-2 border rounded-lg shadow bg-white shortSel';
+      tamanhos.forEach(t => sSel.add(new Option(t, t)));
+      sSel.value = row.dataset.size;
+      sSel.onchange = scheduleSave;
+
+      sec.appendChild(sSel);
+      b.after(sec);
+      sec.after(obsBt);           // mantém Short → Observação
+    } else {
+      sec.remove(); sec = null;
+    }
+
+    setState(!!sec);
+    scheduleSave();
+  };
+  return b;
+}
+
+/* ---- botão Observação ---- */
+function btnObs () {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className =
+    'obsBtn block mx-auto mt-2 w-[80%] md:w-40 py-2 px-4 rounded-lg ' +
+    'text-sm font-medium shadow bg-indigo-600 text-white hover:bg-indigo-700';
+  b.textContent = 'Observação';
+
+  let box = null;          // textarea
+  let wasFilled = false;   // controla se já houve conteúdo digitado
+
+  const setState = (on) => {
+    b.textContent = on ? 'Remover Obs.' : 'Observação';
+    b.classList.toggle('bg-indigo-600', !on);
+    b.classList.toggle('hover:bg-indigo-700', !on);
+    b.classList.toggle('text-white',      !on);
+
+    b.classList.toggle('bg-gray-300',   on);
+    b.classList.toggle('hover:bg-gray-400', on);
+    b.classList.toggle('text-black',    on);
+  };
+
+  b.onclick = () => {
+    if (!box) {
+      // cria o campo
+      box = document.createElement('textarea');
+      box.rows = 2;
+      box.placeholder = 'Digite sua observação...';
+      box.className = 'w-full mt-2 p-2 border rounded-lg shadow obsBox';
+      box.addEventListener('input', () => {
+        wasFilled = box.value.trim().length > 0;
+        scheduleSave(); // salva ao digitar
+      });
+      b.after(box);
+    } else {
+      // remove o campo
+      box.remove();
+      box = null;
+
+      if (wasFilled) scheduleSave();  // salva se já houve texto
+      wasFilled = false;              // reseta controle
+    }
+
+    setState(!!box);
+  };
+
+  return b;
+}
+
+/* -------- Adiciona linha -------- */
+function addUniformRow(
+  tam = 'M',
+  nome = '',
+  numero = '',
+  withShort = '',
+  obs = '',
+  id = null              // << NOVO  — aceita id existente
+) {
+  const row = document.createElement('div');
+  row.className    = 'relative border rounded-xl p-4 shadow bg-white';
+  row.dataset.size = tam;
+  row.dataset.rowId =
+    id || crypto.randomUUID?.() || Math.random().toString(36).slice(2); // ← garante mesmo id p/ todos
+
+  /* ── SELECT TAMANHO ─────────────────────────────────────────────── */
+  const sel   = new OptionList(tam);
+  /* ── INPUTS NOME / NÚMERO ───────────────────────────────────────── */
+  const nomeIn = inputTxt('Nome',   nome);
+  const numIn  = inputTxt('Número', numero, 'w-full md:w-28');
+
+  /* garante espaçamento vertical = 16 px no mobile */
+  [sel.el, nomeIn, numIn].forEach(el => {
+    el.classList.remove('mb-2', 'md:mb-0');
+    el.classList.add   ('mb-4', 'md:mb-0');
+  });
+
+  /* ── BOTÕES SHORT / OBSERVAÇÃO ──────────────────────────────────── */
+  const shortBt = btnShort();
+  const obsBt   = btnObs();
+
+  /* ── REMOVER CARD ──────────────────────────────────────────────── */
+  const rm = document.createElement('button');
+  rm.className =
+    'absolute top-2 right-2 w-6 h-6 rounded-full bg-red-600 text-white ' +
+    'text-sm font-bold shadow flex items-center justify-center hover:bg-red-700';
+  rm.textContent = '✕';
+  rm.onclick = () => { modalTarget = row; modalDel.classList.remove('hidden'); };
+
+  /* ── CONTAINER FLEX DOS CAMPOS PRINCIPAIS ───────────────────────── */
+  const flex = document.createElement('div');
+  flex.className = 'flex flex-col md:flex-row md:items-start gap-4';
+  flex.append(sel.el, nomeIn, numIn);
+
+  /* ── MONTA CARD COMPLETO ───────────────────────────────────────── */
+  row.append(flex, shortBt, obsBt, rm);
+  uniformList.appendChild(row);
+
+  /* restaura dados, se houver -------------------------------------- */
+  if (withShort) { shortBt.click(); row.querySelector('.shortSel').value = withShort; }
+  if (obs)       { obsBt .click(); row.querySelector('.obsBox' ).value = obs;        }
+
+  resortRows(); updateSeq(); scheduleSave();
+}
+
+
+/* -------- ordena por tamanho -------- */
+function resortRows(){
+  const rows=[...uniformList.children];
+  rows.sort((a,b)=>tamanhos.indexOf(a.dataset.size)-tamanhos.indexOf(b.dataset.size));
+  rows.forEach(r=>uniformList.appendChild(r));
+}
+
+/* ------- filtro & sequência -------- */
+function buildFilter(){
+  const counts={};
+  uniformList.querySelectorAll('[data-size]').forEach(d=>counts[d.dataset.size]=(counts[d.dataset.size]||0)+1);
+  filterBar.innerHTML='';
+  const keys=Object.keys(counts).sort((a,b)=>tamanhos.indexOf(a)-tamanhos.indexOf(b));
+  if(!keys.length){ filterBar.classList.add('hidden'); return;}
+  filterBar.classList.remove('hidden');
+  if(!activeFilter||!counts[activeFilter]) activeFilter=keys[0];
+  keys.forEach(s=>{
+    const btn=document.createElement('button');
+    btn.textContent=`${s} (${counts[s]})`;
+    btn.className=`py-1 px-3 rounded-lg text-sm font-medium ${s===activeFilter?'bg-indigo-600 text-white':'bg-gray-200 text-gray-700 hover:bg-gray-300'}`;
+    btn.onclick=()=>{ activeFilter=s; buildFilter();applyFilter(); };
+    filterBar.appendChild(btn);
+  });
+}
+const applyFilter = () => {
+  let firstVisible = true;                      // marca o 1º card que aparece
+
+  uniformList.querySelectorAll('[data-size]').forEach(card => {
+    const show = card.dataset.size === activeFilter;
+    card.classList.toggle('hidden', !show);
+
+    /* —– ajusta o recuo vertical —–
+       • espaço padrão = já existe por causa do space-y-16
+       • para o 1º visível zeramos o margin-top para alinhar              */
+    if (show) {
+      card.style.marginTop = firstVisible ? '16px' : '';   // '' = usa o space-y-16
+      firstVisible = false;
+    }
+  });
+};
+
+function updateSeq(){
+  resortRows();                       // mantém a ordem por tamanho
+
+  [...uniformList.children].forEach((card, i)=>{
+    /* rótulo “Uniforme 01 …” */
+    let lab = card.querySelector('.seqLabel');
+    if(!lab){
+      lab = document.createElement('span');
+      lab.className =
+        'seqLabel absolute left-4 -top-3 px-2 py-px rounded ' +
+        'bg-indigo-600 text-white text-xs font-bold shadow';
+      card.appendChild(lab);
+    }
+    lab.textContent = `Uniforme ${String(i+1).padStart(2,'0')}`;
+
+    /* 👉 NÃO altera margin nem padding  
+       O espaçamento vertical é controlado unicamente por
+       `space-y-4` no contêiner #uniformList (16 px). */
+  });
+}
+
+/* ------------- salvar / ler -------------- */
+function gatherData() {
+  /* tamanhos ------------------------------------------------------- */
+  const sizes = {};
+  sizeForm.querySelectorAll('input').forEach(i =>
+    sizes[i.dataset.tam] = +i.value || 0
+  );
+
+  /* uniformes ------------------------------------------------------ */
+  const uniforms = [...uniformList.children].map(card => {
+    const [sel, nome, num] = card.querySelectorAll('select, input');
+    const shortSel = card.querySelector('.shortSel');
+    const obsBox   = card.querySelector('.obsBox');
+
+    return {
+      id    : card.dataset.rowId,           // << NOVO  — salvando o ID persistente
+      size  : sel.value,
+      name  : nome.value,
+      number: num.value,
+      short : shortSel ? shortSel.value       : '',
+      obs   : obsBox  ? obsBox.value.trim()   : ''
+    };
+  });
+
+  return { sizes, uniforms };
+}
+async function saveData(phone){
+  try{ await set(ref(db,'pedidos/'+phone),{data:gatherData(),updatedAt:Date.now()}); localUpdatedAt=Date.now();}
+  catch(e){ showMsg('Erro ao salvar: '+e.message); }
+}
+/* ---------------- carregar do Firebase --------------- */
+async function loadData (phone, silent = false) {
+  try {
+    /* ------------------------------------------------------------------
+       0) Estado visual ANTES de limpar a lista
+    ------------------------------------------------------------------ */
+    const prevFilter = activeFilter;              // tamanho que o usuário estava vendo
+    const prevScroll = uniformList.scrollTop;     // posição vertical do scroll
+
+    /* ------------------------------------------------------------------
+       1) Busca dados no Firebase
+    ------------------------------------------------------------------ */
+    const snap = await get(child(ref(db), `pedidos/${phone}`));
+    if (!snap.exists()) {                         // nenhum pedido
+      if (!silent) showMsg('Nenhum pedido encontrado.');
+      return;
+    }
+
+    const { data, updatedAt } = snap.val();
+    if (updatedAt <= localUpdatedAt) return;      // nada novo desde a última vez
+
+    /* ------------------------------------------------------------------
+       2) Reconstrói interface (inputs de tamanho + cards)
+          – bloqueia scheduleSave() enquanto monta a UI
+    ------------------------------------------------------------------ */
+    isLoading = true;                             // 🛑 suspende salvamentos
+
+    buildSizeInputs(data.sizes);                  // lado esquerdo (passo 2)
+
+    uniformList.innerHTML = '';                   // zera lista de cards
+    data.uniforms.forEach(u =>
+      addUniformRow(u.size, u.name, u.number, u.short, u.obs, u.id)
+    );
+
+    isLoading = false;                            // ✅ libera salvamentos
+
+    /* ------------------------------------------------------------------
+       3) Barra de filtro
+          – buildFilter() pode mudar activeFilter → voltamos depois
+    ------------------------------------------------------------------ */
+    buildFilter();
+
+    if (
+      prevFilter &&
+      [...uniformList.children].some(c => c.dataset.size === prevFilter)
+    ) {
+      activeFilter = prevFilter;                  // volta para o filtro antigo
+      buildFilter();
+    }
+
+    applyFilter();                                // esconde/mostra conforme filtro
+    updateSeq();                                  // renumera “Uniforme 01…”
+
+    /* ------------------------------------------------------------------
+       4) Re-aplica presença simultânea IMEDIATAMENTE
+          (sem esperar o próximo evento onValue)
+    ------------------------------------------------------------------ */
+    const cursorSnap = await get(ref(db, 'cursors'));
+    (function applyPresence(snap) {
+      const now = Date.now();
+
+      /* limpa visual anterior */
+      uniformList.querySelectorAll('.presence-outline').forEach(card => {
+        card.classList.remove('presence-outline');
+        card.style.removeProperty('--clr');
+        card.style.removeProperty('border');
+        card.querySelector('.presence-badge')?.remove();
+        card.querySelectorAll('[data-locked]')
+             .forEach(el => el.removeAttribute('data-locked'));
+      });
+
+      /* aplica estados atuais   */
+      snap.forEach(cardSnap => {
+        const rowId = cardSnap.key;
+        let someoneElse = false;
+
+        cardSnap.forEach(userSnap => {
+          const exp = userSnap.val();
+          if (exp < now)        return;           // expirado
+          if (userSnap.key === USER_ID) return;   // não mostra para si
+
+          const card = uniformList.querySelector(`[data-row-id="${rowId}"]`);
+          if (!card) return;
+
+          someoneElse = true;
+
+          const clr = colorFromId(userSnap.key);
+          card.classList.add('presence-outline');
+          card.style.setProperty('--clr', clr);
+          card.style.setProperty('border', `2px dashed ${clr}`, 'important');
+
+          if (!card.querySelector('.presence-badge')) {
+            const badge = document.createElement('span');
+            badge.className = 'presence-badge';
+            badge.textContent = 'Tem alguém aqui';
+            card.appendChild(badge);
+          }
+        });
+
+        /* bloqueia / desbloqueia campos */
+        const card = uniformList.querySelector(`[data-row-id="${rowId}"]`);
+        if (card) {
+          card.querySelectorAll('input,select,textarea,button')
+              .forEach(el => el.disabled = someoneElse);
+          if (someoneElse) card.dataset.locked = '1';
+          else             delete card.dataset.locked;
+        }
+      });
+    })(cursorSnap);
+
+    /* ------------------------------------------------------------------
+       5) Devolve scroll exatamente onde estava
+    ------------------------------------------------------------------ */
+    uniformList.scrollTop = prevScroll;
+
+    /* ------------------------------------------------------------------
+       6) Ajustes de tela, timers e mensagens
+    ------------------------------------------------------------------ */
+    if (!silent) {
+      welcome.classList.add('hidden');
+      step2.classList.add('hidden');
+      step3.classList.remove('hidden');
+    }
+
+    localUpdatedAt = updatedAt;
+    currentPhone   = phone;
+
+    if (!syncTimer) startSync();                  // evita múltiplos intervalos
+    if (!silent) showMsg('Dados recebidos com sucesso!');
+  } catch (e) {
+    if (!silent) showMsg('Erro ao carregar: ' + e.message);
+  }
+}
+
+
+
+
+
+/* --------------- navegação --------------- */
+startBtn.onclick = ()=>showTelModal(null,'Por favor, informe o telefone<br>do responsável pelo pedido.');
+viewBtn.onclick  = ()=>showTelModal('view','Informe o telefone para visualizar');
+
+/* --------------- navegação --------------- */
+toStep3Btn.type = 'button';   // evita ser “botão submit” do <form>
+
+toStep3Btn.onclick = () => {
+  /* exige ao menos um tamanho > 0 antes de prosseguir ------------------- */
+  const algumValor = [...sizeForm.querySelectorAll('input')].some(i => +i.value > 0);
+  if (!algumValor) { showMsg('Informe pelo menos uma quantidade antes de continuar!'); return; }
+
+  syncUniforms();
+  step2.classList.add('hidden');
+  step3.classList.remove('hidden');
+};
+qtyBack.onclick  = ()=>{ step2.classList.add('hidden'); welcome.classList.remove('hidden'); currentPhone=null; localUpdatedAt=0; clearInterval(syncTimer); };
+backBtn.onclick  = ()=>{ step3.classList.add('hidden'); step2.classList.remove('hidden'); };
+
+/* ------------------------------------------------------------------
+   XX) Texto para WhatsApp — cabeçalhos e separadores
+------------------------------------------------------------------ */
+function buildTxt(){
+  const SEP = '----------------------------';           // linha divisória
+  const grupos = {};                                  // agrupa cards por tamanho
+
+  /* 1. Agrupa os uniformes ------------------------------------------------- */
+  [...uniformList.children].forEach(card=>{
+    const tam   = card.dataset.size;
+    const nome  = card.querySelector('input[placeholder="Nome"]')   ?.value.trim() || '';
+    const num   = card.querySelector('input[placeholder="Número"]') ?.value.trim() || '';
+    const short = card.querySelector('.shortSel')?.value.trim()      || '';
+    const obs   = card.querySelector('.obsBox')  ?.value.trim()      || '';
+
+    if(!nome && !num && !short && !obs) return;       // ignora totalmente vazio
+    (grupos[tam] = grupos[tam] || []).push({nome,num,short,obs});
+  });
+
+  /* 2. Monta o texto final -------------------------------------------------- */
+  const partes = tamanhos
+    .filter(t=>grupos[t])                            // apenas tamanhos usados
+    .map(t=>{
+      const header =
+`${SEP}
+TAMANHO: ${t}
+${SEP}`;                                            // ‼️ sem linha em branco extra
+
+      const blocos = grupos[t].map(u=>{
+        let bloco = `NOME: ${u.nome || '-'}
+NÚMERO: ${u.num || '-'}`;
+        if(u.short) bloco += `\nSHORT: ${u.short}`;
+        if(u.obs)   bloco += `\nOBS: ${u.obs}`;
+        return `${bloco}
+${SEP}`;                                           // fecha o uniforme
+      }).join('\n');                                // separa uniformes
+
+      return `${header}
+${blocos}`;                                        // linha única entre header e 1º uniforme
+    });
+
+  /* 3. Junta os tamanhos com 2 linhas vazias entre eles -------------------- */
+  return partes.join('\n\n\n').trim();
+}
+
+
+
+/* ----- concluir com confirmação -------- */
+concludeBtn.onclick = ()=> modalConfirmSend.classList.remove('hidden');
+
+sendNow.onclick = ()=>{
+  modalConfirmSend.classList.add('hidden');
+
+  const txt = encodeURIComponent( buildTxt() );
+  // 558587041740 = número de atendimento do UniformExpress
+  window.open(`https://wa.me/558587041740?text=${txt}`, '_blank');
+};
+cancelSend.onclick = () => modalConfirmSend.classList.add('hidden');
+
+
+
+/* -------- excluir uniforme ---------- */
+delYes.onclick=()=>{ if(modalTarget){ modalTarget.remove(); updateSeq(); scheduleSave(); } modalDel.classList.add('hidden'); buildFilter();applyFilter(); };
+delNo.onclick = ()=>modalDel.classList.add('hidden');
+
+/* ---------- sincronizar cards -------- */
+function syncUniforms(){
+  const desired={}; sizeForm.querySelectorAll('input').forEach(i=>desired[i.dataset.tam]=+i.value||0);
+  const current={}; [...uniformList.children].forEach(r=>{ const s=r.dataset.size; (current[s]=current[s]||[]).push(r); });
+  Object.keys(current).forEach(s=>{ while(current[s].length>desired[s]) current[s].pop().remove(); });
+  Object.entries(desired).forEach(([s,qty])=>{
+    const have=current[s]?current[s].length:0;
+    for(let i=0;i<qty-have;i++) addUniformRow(s);
+  });
+  buildFilter();applyFilter();updateSeq();
+}
+
+
+/* --------------- teste ----------------- */
+testBtn.onclick=()=>{
+  if(!uniformList.children.length) tamanhos.slice(0,5).forEach(t=>addUniformRow(t,'','',true,'Exemplo'));
+  const nomes=['Ana','Beto','Carlos','Duda','Eva','Fábio','Gui','Helô','Igor','João'];
+  [...uniformList.children].forEach(r=>{
+    const nome=r.querySelector('input[placeholder="Nome"]');
+    const num =r.querySelector('input[placeholder="Número"]');
+    nome.value=nomes[Math.floor(Math.random()*nomes.length)];
+    num.value=Math.floor(Math.random()*50)+1;
+  });
+  scheduleSave();
+};
+
+/* ------------------------------------------------------------------
+   Teclado móvel: mantém o(s) botão(ões) principal(is) acima do teclado
+------------------------------------------------------------------ */
+
+/**
+ * Faz um botão “flutuar” logo acima do teclado virtual.  
+ * Se o teclado some, o botão volta para o layout normal.
+ * @param {HTMLElement} btn – referência do botão
+ */
+function makeKbAware(btn) {
+  if (!window.visualViewport) return;          // desktop / iOS antigo
+
+  const vv   = window.visualViewport;
+  const GAP  = 16;                             // distância entre teclado e botão
+  const base = {                               // estilo original (será restaurado)
+    position : btn.style.position  || '',
+    bottom   : btn.style.bottom    || '',
+    left     : btn.style.left      || '',
+    width    : btn.style.width     || '',
+    transform: btn.style.transform || '',
+    zIndex   : btn.style.zIndex    || ''
+  };
+
+  const restore = () => Object.assign(btn.style, base);
+
+  const update  = () => {
+    /* há algum modal visível? --------------------------------------- */
+    const modalOpen = document.querySelector('div[id^="modal"]:not(.hidden)');
+    /* teclado virtual está aberto? ---------------------------------- */
+    const keyboardOpen = vv.height < window.innerHeight - 100; // heurística
+
+    if (modalOpen || !keyboardOpen) {
+      /* --- cancela flutuante --- */
+      restore();
+      return;
+    }
+
+    /* --- flutua o botão acima do teclado --- */
+    const distBottom = window.innerHeight - (vv.offsetTop + vv.height);
+    btn.style.position  = 'fixed';
+    btn.style.left      = '50%';
+    btn.style.transform = 'translateX(-50%)';
+    btn.style.width     = 'calc(100% - 2rem)';   // 1 rem de margem em cada lado
+    btn.style.bottom    = (distBottom + GAP) + 'px';
+    btn.style.zIndex    = '30';                  // abaixo dos modais (z-40+)
+  };
+
+  /* ouve mudanças de teclado … */
+  vv.addEventListener('resize', update);
+  vv.addEventListener('scroll',  update);
+  /* … e abre/fecha de qualquer modal */
+  window.addEventListener('modal-toggle', update);
+
+  update();   // chamada inicial
+}
+
+/* --- CORREÇÃO do “botão flutuante aparece atrás do pop-up” -------------
+   Toda vez que QUALQUER modal (id começa com "modal") muda a classe
+   .hidden, disparamos o evento “modal-toggle”, que o makeKbAware já escuta.
+-------------------------------------------------------------------------*/
+(() => {
+  const modals = document.querySelectorAll('div[id^="modal"]');   // todos os pop-ups
+  const obs = new MutationObserver(() =>
+    window.dispatchEvent(new Event('modal-toggle'))               // avisa o makeKbAware
+  );
+  modals.forEach(m => obs.observe(m, { attributes:true, attributeFilter:['class'] }));
+})();
+
+
+/* —– indique aqui quais botões devem “grudar” no teclado —– */
+makeKbAware(toStep3Btn);    // botão “Continuar” do passo 2
+makeKbAware(concludeBtn);   // botão “Concluir” do passo 3
+/* Se quiser outro botão com o mesmo comportamento,
+   basta chamar makeKbAware(<elemento>); */
+
+
+setupPresenceTracking();   // ⚠️ mantenha depois de declarar a função
+
+
+</script>
+</body>
+</html>
