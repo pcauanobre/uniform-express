@@ -145,6 +145,26 @@
   </div>
 </div>
 
+<!-- selecionar cor -->
+<div id="modalColor" class="hidden fixed inset-0 bg-black/40 backdrop-blur flex items-center justify-center z-40">
+  <div class="bg-white rounded-xl p-6 w-80 shadow-xl space-y-6 animate-fadeIn">
+    <p class="text-lg font-medium text-center">Escolha a cor</p>
+
+    <!-- grade de cores – preenchida por JS -->
+    <div id="colorGrid" class="grid grid-cols-6 gap-3"></div>
+
+    <div class="flex gap-4">
+      <button id="colorSave"   class="flex-1 py-2 bg-indigo-600 text-white rounded-lg font-bold hover:bg-indigo-700">
+        Salvar
+      </button>
+      <button id="colorCancel" class="flex-1 py-2 bg-gray-200 text-black rounded-lg font-bold hover:bg-gray-300">
+        Cancelar
+      </button>
+    </div>
+  </div>
+</div>
+
+
 <!-- ================================================================= TELAS ================================================================== -->
 <!-- BEM-VINDO -->
 <section id="welcome" class="h-dvh w-full max-w-lg mx-auto px-4 flex flex-col items-center justify-center text-center gap-4 animate-fadeIn">
@@ -765,115 +785,208 @@ function btnShort () {
 }
 
 /* ---- botão Observação ---- */
-function btnObs () {
-  const b = document.createElement('button');
-  b.type = 'button';
-  b.className =
-    'obsBtn block mx-auto mt-2 w-[80%] md:w-40 py-2 px-4 rounded-lg ' +
+function btnObs(initialObs='', initialColor=''){
+  const b=document.createElement('button');
+  b.type='button';
+  b.className=
+    'obsBtn block mx-auto mt-2 w-[80%] md:w-40 py-2 px-4 rounded-lg '+
     'text-sm font-medium shadow bg-indigo-600 text-white hover:bg-indigo-700';
-  b.textContent = 'Observação';
+  b.textContent='Observação';
 
-  let box = null;          // textarea
-  let wasFilled = false;   // controla se já houve conteúdo digitado
+  let box=null, colorBt=null;
+  let wasFilled=!!initialObs;
 
-  const setState = (on) => {
+  const setState=on=>{
     b.textContent = on ? 'Remover Obs.' : 'Observação';
-    b.classList.toggle('bg-indigo-600', !on);
-    b.classList.toggle('hover:bg-indigo-700', !on);
-    b.classList.toggle('text-white',      !on);
-
-    b.classList.toggle('bg-gray-300',   on);
-    b.classList.toggle('hover:bg-gray-400', on);
-    b.classList.toggle('text-black',    on);
+    b.classList.toggle('bg-indigo-600',!on);
+    b.classList.toggle('hover:bg-indigo-700',!on);
+    b.classList.toggle('text-white', !on);
+    b.classList.toggle('bg-gray-300',  on);
+    b.classList.toggle('hover:bg-gray-400',on);
+    b.classList.toggle('text-black',   on);
   };
 
-  b.onclick = () => {
-    if (!box) {
-      /* cria o campo */
-      box = document.createElement('textarea');
-      box.rows = 2;
-      box.placeholder = 'Digite sua observação...';
-      box.className = 'w-full mt-2 p-2 border rounded-lg shadow obsBox';
+  b.onclick=()=>{
+    if(!box){                  /* — abrir — */
+      box=document.createElement('textarea');
+      box.rows=2; box.placeholder='Digite sua observação...';
+      box.className='obsBox w-full mt-2 p-2 border rounded-lg shadow';
+      box.value=initialObs;
+      box.addEventListener('input',()=>{wasFilled=box.value.trim().length>0;
+                                        scheduleSaveDelayed();});
 
-      /* ⏲️ salva somente após 2 s sem digitar */
-      box.addEventListener('input', () => {
-        wasFilled = box.value.trim().length > 0;
-        scheduleSaveDelayed();
-      });
+      colorBt=btnColor(initialColor);          // novo botão Cor
+      colorBt.classList.add('mt-2');           // pequeno espaçamento
 
-      b.after(box);
-    } else {
-      /* remove o campo */
-      box.remove();
-      box = null;
-
-      if (wasFilled) scheduleSaveDelayed();   // salva após remoção, com delay
-      wasFilled = false;
+      b.after(box); box.after(colorBt);
+    }else{                    /* — fechar — */
+      colorBt?.remove(); colorBt=null;
+      box.remove(); box=null;
+      if(wasFilled) scheduleSaveDelayed();
+      wasFilled=false;
     }
-
     setState(!!box);
   };
 
+  /* se já existirem dados, abre automaticamente */
+  if(initialObs || initialColor) b.click();
+
   return b;
 }
-/* -------- Adiciona linha -------- */
-function addUniformRow(
-  tam = 'M',
-  nome = '',
-  numero = '',
-  withShort = '',
-  obs = '',
-  id = null              // << NOVO  — aceita id existente
-) {
-  const row = document.createElement('div');
-  row.className    = 'relative border rounded-xl p-4 shadow bg-white';
-  row.dataset.size = tam;
-  row.dataset.rowId =
-    id || crypto.randomUUID?.() || Math.random().toString(36).slice(2); // ← garante mesmo id p/ todos
 
-  /* ── SELECT TAMANHO ─────────────────────────────────────────────── */
-  const sel   = new OptionList(tam);
-  /* ── INPUTS NOME / NÚMERO ───────────────────────────────────────── */
-  const nomeIn = inputTxt('Nome',   nome);
-  const numIn  = inputTxt('Número', numero, 'w-full md:w-28');
+/* ========================================================================
+   BOTÃO “COR”  –  escolhe e exibe a cor do uniforme
+===========================================================================*/
+/* ========================================================================
+   BOTÃO “COR”  – seleciona e exibe a cor do uniforme
+===========================================================================*/
+const COLOR_PALETTE = [
+  '#000000','#595959','#808080','#bfbfbf','#e5e5e5','#ffffff',
+  '#00c853','#8bc34a','#c6ff00','#64ffda','#0097a7','#4fc3f7',
+  '#0d47a1','#0026ff','#512da8','#673ab7','#ab47bc','#ff80ab',
+  '#ff5252','#ff1744','#ff9100','#ffd740','#ffab40','#a65c2e'
+];             // ajuste como quiser
 
-  /* garante espaçamento vertical = 16 px no mobile */
-  [sel.el, nomeIn, numIn].forEach(el => {
-    el.classList.remove('mb-2', 'md:mb-0');
-    el.classList.add   ('mb-4', 'md:mb-0');
+/* — refs do modal — */
+const modalColor = $('modalColor'),
+      colorGrid  = $('colorGrid'),
+      colorSave  = $('colorSave'),
+      colorCancel= $('colorCancel');
+
+let currentColorBtn = null;        // quem abriu o modal
+let chosenColor     = '';          // cor clicada
+
+/* ---------- grade de cores (monta 1×) ---------- */
+(function buildColorGrid(){
+  /* opção “Sem cor” (branco + risco vermelho) */
+  const none = document.createElement('button');
+  none.type = 'button'; none.dataset.color = '';
+  none.className = 'w-8 h-8 rounded-full border shadow-inner relative ' +
+                   'hover:scale-110 transition';
+  const slash = document.createElement('div');
+  Object.assign(slash.style,{
+    position:'absolute',inset:'0',borderRadius:'9999px',
+    backgroundImage:'linear-gradient(135deg,transparent 45%,#e11d48 45%,'+
+                    '#e11d48 55%,transparent 55%)'
+  });
+  none.appendChild(slash);
+  colorGrid.appendChild(none);
+
+  /* demais cores */
+  COLOR_PALETTE.forEach(c=>{
+    const b=document.createElement('button');
+    b.type='button'; b.dataset.color=c;
+    b.className='w-8 h-8 rounded-full border shadow-inner hover:scale-110 transition';
+    b.style.background=c; colorGrid.appendChild(b);
   });
 
-  /* ── BOTÕES SHORT / OBSERVAÇÃO ──────────────────────────────────── */
-  const shortBt = btnShort();
-  const obsBt   = btnObs();
+  /* clique na grade */
+  colorGrid.addEventListener('click',e=>{
+    const btn=e.target.closest('button'); if(!btn) return;
+    [...colorGrid.children].forEach(x=>x.classList.remove('ring','ring-2'));
+    btn.classList.add('ring','ring-2');
+    chosenColor=btn.dataset.color;
+  });
+})();
 
-  /* ── REMOVER CARD ──────────────────────────────────────────────── */
-  const rm = document.createElement('button');
-  rm.className =
-    'absolute top-2 right-2 w-6 h-6 rounded-full bg-red-600 text-white ' +
+/* ---------- ações do modal ---------- */
+colorCancel.onclick = ()=>modalColor.classList.add('hidden');
+colorSave.onclick   = ()=>{
+  if(currentColorBtn) applyColor(currentColorBtn,chosenColor);
+  scheduleSave();
+  modalColor.classList.add('hidden');
+};
+
+/* ---------- util swatch ---------- */
+function applyColor(btn, color){
+  const sw=btn.querySelector('.swatch');
+  if(color){
+    sw.style.background=color;
+    sw.style.backgroundImage='';        // remove risco
+    sw.style.borderColor='white';
+  }else{           /* sem cor */
+    sw.style.background='#ffffff';
+    sw.style.backgroundImage=
+      'linear-gradient(135deg,transparent 45%,#e11d48 45%,#e11d48 55%,transparent 55%)';
+    sw.style.borderColor='#e11d48';
+  }
+  btn.dataset.color=color;              // '' ou Hex
+}
+
+/* ---------- botão de Cor (criado dentro de Observação) ---------- */
+function btnColor(initial=''){
+  const b=document.createElement('button');
+  b.type='button';
+  b.className =
+    'colorBtn flex justify-center items-center gap-2 w-full md:w-40 py-2 px-4 ' +
+    'rounded-lg text-sm font-medium shadow bg-indigo-600 text-white ' +
+    'hover:bg-indigo-700';
+  b.innerHTML=`<span>Cor:</span>
+               <span class="swatch inline-block w-4 h-4 rounded-full border"></span>`;
+
+  applyColor(b, initial);
+
+  b.onclick=()=>{
+    currentColorBtn=b;
+    chosenColor=b.dataset.color||'';
+    [...colorGrid.children].forEach(x=>{
+      const on=x.dataset.color===chosenColor;
+      x.classList.toggle('ring',on); x.classList.toggle('ring-2',on);
+    });
+    modalColor.classList.remove('hidden');
+  };
+  return b;
+}
+
+
+
+/* -------- Adiciona linha -------- */
+function addUniformRow(
+  tam='M', nome='', numero='',
+  withShort='', obs='', cor='',          // obs & cor
+  id=null
+){
+  const row=document.createElement('div');
+  row.className='relative border rounded-xl p-4 shadow bg-white';
+  row.dataset.size=tam;
+  row.dataset.rowId=id || crypto.randomUUID?.() || Math.random().toString(36).slice(2);
+
+  /* SELECT tamanho + campos principais */
+  const sel=new OptionList(tam);
+  const nomeIn=inputTxt('Nome',nome);
+  const numIn =inputTxt('Número',numero,'w-full md:w-28');
+  [sel.el,nomeIn,numIn].forEach(el=>{
+    el.classList.remove('mb-2','md:mb-0');
+    el.classList.add('mb-4','md:mb-0');
+  });
+
+  /* botões acessórios */
+  const shortBt=btnShort();
+  const obsBt  =btnObs(obs, cor);          // controla também a cor
+
+  /* remover cartão */
+  const rm=document.createElement('button');
+  rm.className=
+    'absolute -top-3 left-2 w-6 h-6 rounded-full bg-red-600 text-white '+
     'text-sm font-bold shadow flex items-center justify-center hover:bg-red-700';
-  rm.textContent = '✕';
-  rm.onclick = () => { modalTarget = row; modalDel.classList.remove('hidden'); };
+  rm.textContent='✕';
+  rm.onclick=()=>{modalTarget=row; modalDel.classList.remove('hidden');};
 
-  /* ── CONTAINER FLEX DOS CAMPOS PRINCIPAIS ───────────────────────── */
-  const flex = document.createElement('div');
-  flex.className = 'flex flex-col md:flex-row md:items-start gap-4';
-  flex.append(sel.el, nomeIn, numIn);
+  /* container flex */
+  const flex=document.createElement('div');
+  flex.className='flex flex-col md:flex-row md:items-start gap-4';
+  flex.append(sel.el,nomeIn,numIn);
 
-  /* ── MONTA CARD COMPLETO ───────────────────────────────────────── */
-  row.append(flex, shortBt, obsBt, rm);
+  /* monta */
+  row.append(rm,flex,shortBt,obsBt);
   uniformList.appendChild(row);
 
-  /* restaura dados, se houver -------------------------------------- */
-  if (withShort) { shortBt.click(); row.querySelector('.shortSel').value = withShort; }
-  if (obs)       { obsBt .click(); row.querySelector('.obsBox' ).value = obs;        }
+  /* restaura short */
+  if(withShort){shortBt.click(); row.querySelector('.shortSel').value=withShort;}
 
-  resortRows();
-  updateSeq();
-  reflectSizesFromCards();   //  << NOVO
-  scheduleSave();
-
+  resortRows(); updateSeq(); reflectSizesFromCards(); scheduleSave();
 }
+
 
 
 /* ------------------------------------------------------------------
@@ -928,53 +1041,56 @@ const applyFilter = () => {
   });
 };
 
-function updateSeq(){
+function updateSeq () {
   resortRows();                       // mantém a ordem por tamanho
 
-  [...uniformList.children].forEach((card, i)=>{
+  [...uniformList.children].forEach((card, i) => {
     /* rótulo “Uniforme 01 …” */
     let lab = card.querySelector('.seqLabel');
-    if(!lab){
+    if (!lab) {
       lab = document.createElement('span');
       lab.className =
-        'seqLabel absolute left-4 -top-3 px-2 py-px rounded ' +
+        'seqLabel absolute left-10 -top-3 px-2 py-px rounded ' +   // ⬅️ deslocado
         'bg-indigo-600 text-white text-xs font-bold shadow';
       card.appendChild(lab);
+    } else {
+      // garante que a classe left-10 esteja aplicada (caso tenha cartões antigos)
+      lab.classList.remove('left-4');
+      lab.classList.add('left-10');
     }
-    lab.textContent = `Uniforme ${String(i+1).padStart(2,'0')}`;
-
-    /* 👉 NÃO altera margin nem padding  
-       O espaçamento vertical é controlado unicamente por
-       `space-y-4` no contêiner #uniformList (16 px). */
+    lab.textContent = `Uniforme ${String(i + 1).padStart(2, '0')}`;
   });
 }
 
 /* ------------- salvar / ler -------------- */
-function gatherData() {
+function gatherData(){
   /* tamanhos ------------------------------------------------------- */
-  const sizes = {};
-  sizeForm.querySelectorAll('input').forEach(i =>
-    sizes[i.dataset.tam] = +i.value || 0
+  const sizes={};
+  sizeForm.querySelectorAll('input').forEach(i=>
+    sizes[i.dataset.tam]=+i.value||0
   );
 
   /* uniformes ------------------------------------------------------ */
-  const uniforms = [...uniformList.children].map(card => {
-    const [sel, nome, num] = card.querySelectorAll('select, input');
-    const shortSel = card.querySelector('.shortSel');
-    const obsBox   = card.querySelector('.obsBox');
+  const uniforms=[...uniformList.children].map(card=>{
+    const [sel,nome,num]=card.querySelectorAll('select, input');
+    const shortSel=card.querySelector('.shortSel');
+    const obsBox  =card.querySelector('.obsBox');
+    const colorBt =card.querySelector('.colorBtn');
 
-    return {
-      id    : card.dataset.rowId,           // << NOVO  — salvando o ID persistente
-      size  : sel.value,
-      name  : nome.value,
-      number: num.value,
-      short : shortSel ? shortSel.value       : '',
-      obs   : obsBox  ? obsBox.value.trim()   : ''
+    return{
+      id    :card.dataset.rowId,
+      size  :sel.value,
+      name  :nome.value,
+      number:num.value,
+      short :shortSel?shortSel.value:'',
+      obs   :obsBox  ?obsBox.value.trim():'',
+      color :colorBt ?colorBt.dataset.color:''
     };
   });
 
-  return { sizes, uniforms };
+  return {sizes, uniforms};
 }
+
 async function saveData(phone){
   try{ await set(ref(db,'pedidos/'+phone),{data:gatherData(),updatedAt:Date.now()}); localUpdatedAt=Date.now();}
   catch(e){ showMsg('Erro ao salvar: '+e.message); }
@@ -1015,7 +1131,7 @@ async function loadData (phone, silent = false) {
 
     uniformList.innerHTML = '';                // limpa cartões
     data.uniforms.forEach(u =>
-      addUniformRow(u.size, u.name, u.number, u.short, u.obs, u.id)
+      addUniformRow(u.size, u.name, u.number, u.short, u.obs, u.color, u.id)
     );
 
     isLoading = false;                         // 🔓 libera scheduleSave()
@@ -1252,17 +1368,74 @@ function reflectSizesFromCards () {
 
 
 /* --------------- teste ----------------- */
-testBtn.onclick=()=>{
-  if(!uniformList.children.length) tamanhos.slice(0,5).forEach(t=>addUniformRow(t,'','',true,'Exemplo'));
-  const nomes=['Ana','Beto','Carlos','Duda','Eva','Fábio','Gui','Helô','Igor','João'];
-  [...uniformList.children].forEach(r=>{
-    const nome=r.querySelector('input[placeholder="Nome"]');
-    const num =r.querySelector('input[placeholder="Número"]');
-    nome.value=nomes[Math.floor(Math.random()*nomes.length)];
-    num.value=Math.floor(Math.random()*50)+1;
+testBtn.onclick = () => {
+  if (!uniformList.children.length) {
+    // Adiciona 20 uniformes aleatórios, variando tamanhos
+    const tamAleatorios = Array.from({ length: 20 }, () => tamanhos[Math.floor(Math.random() * tamanhos.length)]);
+    tamAleatorios.forEach(t => addUniformRow(t));
+  }
+
+  const nomes = [
+    'Ana Beatriz', 'Bruno Ferreira', 'Carlos Eduardo', 'Daniela Souza', 'Eduardo Lima', 'Fernanda Castro',
+    'Gabriel Silva', 'Helena Costa', 'Isabela Rocha', 'João Pedro', 'Kauã Martins', 'Larissa Monteiro',
+    'Lucas Gabriel', 'Mariana Oliveira', 'Nicolas Andrade', 'Otávio Moura', 'Paula Fernandes', 'Rafael Teixeira',
+    'Sofia Almeida', 'Thiago Ramos', 'Vitória Santos', 'Yasmin Freitas', 'Arthur Barros', 'Bianca Meireles',
+    'Caio Mendes', 'Débora Xavier', 'Enzo Carvalho', 'Fábio Ribeiro', 'Giovana Nunes', 'Henrique Diniz',
+    'Igor Cardoso', 'Júlia Neves', 'Kevin Augusto', 'Letícia Lopes', 'Manuela Sales', 'Natália Brito',
+    'Pedro Henrique', 'Quésia Dias', 'Ruan Silva', 'Samuel Castro', 'Tatiane Lima', 'Ueslei Torres',
+    'Vitor Hugo', 'Wesley Costa', 'Xênia Fernandes', 'Yuri Ferreira', 'Zuleide Duarte'
+  ];
+
+  const observacoes = [
+    'Uniforme com manga longa',
+    'Incluir nome no short',
+    'Letra branca no nome',
+    'Número dourado na frente',
+    'Tecido mais fino, se possível',
+    'Urgente: precisa para dia 12',
+    'Verificar se nome cabe completo',
+    'Usar apelido em vez do nome',
+    'Sem número nas costas',
+    'Modelo igual ao da irmã',
+    'Short deve ser tamanho menor'
+  ];
+
+  const rows = [...uniformList.children];
+  const total = rows.length;
+  const comShort   = Math.floor(total * 0.20);
+  const comObs     = Math.floor(total * 0.15);
+
+  // embaralha os índices
+  const indices = rows.map((_, i) => i).sort(() => Math.random() - 0.5);
+  const shortIdx = new Set(indices.slice(0, comShort));
+  const obsIdx   = new Set(indices.slice(comShort, comShort + comObs));
+
+  rows.forEach((row, i) => {
+    const nomeIn = row.querySelector('input[placeholder="Nome"]');
+    const numIn  = row.querySelector('input[placeholder="Número"]');
+    nomeIn.value = nomes[Math.floor(Math.random() * nomes.length)];
+    numIn.value  = Math.floor(Math.random() * 99 + 1);
+
+    // Adiciona Short em 20% dos casos
+    if (shortIdx.has(i)) {
+      const btn = row.querySelector('button');
+      btn?.click();
+      const sel = row.querySelector('.shortSel');
+      if (sel) sel.value = row.dataset.size;
+    }
+
+    // Adiciona Observação em 15% dos casos
+    if (obsIdx.has(i)) {
+      const obsBtn = row.querySelector('.obsBtn');
+      obsBtn?.click();
+      const box = row.querySelector('.obsBox');
+      if (box) box.value = observacoes[Math.floor(Math.random() * observacoes.length)];
+    }
   });
+
   scheduleSave();
 };
+
 
 /* ------------------------------------------------------------------
    Teclado móvel: mantém o(s) botão(ões) principal(is) acima do teclado
