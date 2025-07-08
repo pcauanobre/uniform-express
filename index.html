@@ -280,6 +280,19 @@ const welcome=$('welcome'), step2=$('step2'), step3=$('step3');
 const sizeForm=$('sizeForm'), uniformList=$('uniformList'), filterBar=$('filterBar');
 const startBtn=$('startBtn'), toStep3Btn=$('toStep3'), qtyBack=$('qtyBack');
 const backBtn=$('backBtn'), concludeBtn=$('concludeBtn'), testBtn=$('testBtn');
+/* --------- debug: tecla aspas (") preenche teste --------- */
+document.addEventListener('keydown', e => {
+  const tag = document.activeElement.tagName;
+  const focadoEmCampo = ['INPUT', 'TEXTAREA', 'SELECT'].includes(tag);
+
+  // a tecla física é "Quote" em qualquer layout; ainda aceito e.key === '"' para US simples
+  const teclaAspas = e.code === 'Quote' || e.key === '"';
+
+  if (teclaAspas && !focadoEmCampo) {
+    e.preventDefault();          // evita inserir um caractere morto na página
+    testBtn.click();             // dispara o preenchimento de teste
+  }
+});
 const viewBtn=$('viewBtn'), modalView=$('modalView'), viewClose=$('viewClose'), viewScroll=$('viewScroll');
 const delPedidoBtn=$('delPedidoBtn'), modalDelPedido=$('modalDelPedido');
 const delPedidoYes=$('delPedidoYes'), delPedidoNo=$('delPedidoNo');
@@ -914,24 +927,27 @@ function applyColor(btn, color){
 }
 
 /* ---------- botão de Cor (criado dentro de Observação) ---------- */
-function btnColor(initial=''){
-  const b=document.createElement('button');
-  b.type='button';
+function btnColor(initial = '') {
+  const b = document.createElement('button');
+  b.type = 'button';
   b.className =
-    'colorBtn flex justify-center items-center gap-2 w-full md:w-40 py-2 px-4 ' +
-    'rounded-lg text-sm font-medium shadow bg-indigo-600 text-white ' +
-    'hover:bg-indigo-700';
-  b.innerHTML=`<span>Cor:</span>
-               <span class="swatch inline-block w-4 h-4 rounded-full border"></span>`;
+    // now centred exactly como os demais botões
+    'colorBtn block mx-auto mt-2 w-[80%] md:w-40 flex justify-center items-center gap-2 ' +
+    'py-2 px-4 rounded-lg text-sm font-medium shadow ' +
+    'bg-indigo-600 text-white hover:bg-indigo-700';
+
+  b.innerHTML = `<span>Cor:</span>
+                 <span class="swatch inline-block w-4 h-4 rounded-full border"></span>`;
 
   applyColor(b, initial);
 
-  b.onclick=()=>{
-    currentColorBtn=b;
-    chosenColor=b.dataset.color||'';
-    [...colorGrid.children].forEach(x=>{
-      const on=x.dataset.color===chosenColor;
-      x.classList.toggle('ring',on); x.classList.toggle('ring-2',on);
+  b.onclick = () => {
+    currentColorBtn = b;
+    chosenColor = b.dataset.color || '';
+    [...colorGrid.children].forEach(x => {
+      const on = x.dataset.color === chosenColor;
+      x.classList.toggle('ring', on);
+      x.classList.toggle('ring-2', on);
     });
     modalColor.classList.remove('hidden');
   };
@@ -1260,46 +1276,64 @@ backBtn.onclick = () => {
 /* ------------------------------------------------------------------
    XX) Texto para WhatsApp — cabeçalhos e separadores
 ------------------------------------------------------------------ */
-function buildTxt(){
-  const SEP = '----------------------------';           // linha divisória
-  const grupos = {};                                  // agrupa cards por tamanho
+function buildTxt () {
+  const SEP = '----------------------------';
 
-  /* 1. Agrupa os uniformes ------------------------------------------------- */
-  [...uniformList.children].forEach(card=>{
+  /* 1. Resumo das quantidades --------------------------------------- */
+  const counts = {};
+  sizeForm.querySelectorAll('input').forEach(inp => {
+    const n = +inp.value || 0;
+    if (n > 0) counts[inp.dataset.tam] = n;
+  });
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+
+  const resumoLinhas = tamanhos
+    .filter(t => counts[t])
+    .map(t => `${t}: ${counts[t]}`)
+    .join('\n');
+
+  const blocoResumo = `${SEP}
+RESUMO
+${SEP}
+${resumoLinhas}${total ? `\nTOTAL: ${total}` : ''}
+${SEP}`;
+
+  /* 2. Agrupa os uniformes preenchidos por tamanho ------------------ */
+  const grupos = {};
+  [...uniformList.children].forEach(card => {
     const tam   = card.dataset.size;
     const nome  = card.querySelector('input[placeholder="Nome"]')   ?.value.trim() || '';
     const num   = card.querySelector('input[placeholder="Número"]') ?.value.trim() || '';
     const short = card.querySelector('.shortSel')?.value.trim()      || '';
     const obs   = card.querySelector('.obsBox')  ?.value.trim()      || '';
 
-    if(!nome && !num && !short && !obs) return;       // ignora totalmente vazio
-    (grupos[tam] = grupos[tam] || []).push({nome,num,short,obs});
+    if (!nome && !num && !short && !obs) return;  // ignora cartão vazio
+    (grupos[tam] = grupos[tam] || []).push({ nome, num, short, obs });
   });
 
-  /* 2. Monta o texto final -------------------------------------------------- */
-  const partes = tamanhos
-    .filter(t=>grupos[t])                            // apenas tamanhos usados
-    .map(t=>{
-      const header =
-`${SEP}
+  /* 3. Blocos detalhados por tamanho -------------------------------- */
+  const blocosTamanho = tamanhos
+    .filter(t => grupos[t])
+    .map(t => {
+      const cabecalho = `${SEP}
 TAMANHO: ${t}
-${SEP}`;                                            // ‼️ sem linha em branco extra
+${SEP}`;
 
-      const blocos = grupos[t].map(u=>{
-        let bloco = `NOME: ${u.nome || '-'}
+      const linhas = grupos[t].map(u => {
+        let txt = `NOME: ${u.nome || '-'}
 NÚMERO: ${u.num || '-'}`;
-        if(u.short) bloco += `\nSHORT: ${u.short}`;
-        if(u.obs)   bloco += `\nOBS: ${u.obs}`;
-        return `${bloco}
-${SEP}`;                                           // fecha o uniforme
-      }).join('\n');                                // separa uniformes
+        if (u.short) txt += `\nSHORT: ${u.short}`;
+        if (u.obs)   txt += `\nOBS: ${u.obs}`;
+        return `${txt}
+${SEP}`;
+      }).join('\n');
 
-      return `${header}
-${blocos}`;                                        // linha única entre header e 1º uniforme
-    });
+      return `${cabecalho}
+${linhas}`;
+    }).join('\n\n');                 // linha em branco entre tamanhos
 
-  /* 3. Junta os tamanhos com 2 linhas vazias entre eles -------------------- */
-  return partes.join('\n\n\n').trim();
+  /* 4. Junta tudo e devolve ----------------------------------------- */
+  return `${blocoResumo}\n\n${blocosTamanho}`.trim();
 }
 
 
@@ -1369,71 +1403,102 @@ function reflectSizesFromCards () {
 
 /* --------------- teste ----------------- */
 testBtn.onclick = () => {
+
+  /* ------------------------------------------------------------------
+     0) Garante que existam cartões:
+        • se já houver, usa os existentes
+        • se não houver, cria a quantidade pedida nos inputs do Passo 2
+  ------------------------------------------------------------------ */
   if (!uniformList.children.length) {
-    // Adiciona 20 uniformes aleatórios, variando tamanhos
-    const tamAleatorios = Array.from({ length: 20 }, () => tamanhos[Math.floor(Math.random() * tamanhos.length)]);
-    tamAleatorios.forEach(t => addUniformRow(t));
+    // gera cartões exatamente iguais às quantidades informadas
+    syncUniforms();                       // (função já existente)
+    if (!uniformList.children.length) {
+      // se o usuário não preencheu nada, cria 1 uniforme para teste
+      addUniformRow('M');
+    }
   }
 
+  const rows   = [...uniformList.children];
+  const total  = rows.length;
+
+  /* ------------------------------------------------------------------
+     1) Define quantos terão Short / Observação
+  ------------------------------------------------------------------ */
+  const nShort = Math.round(total * 0.20);          // 20 %
+  const nObs   = Math.round(total * 0.15);          // 15 %
+
+  /* ------------------------------------------------------------------
+     2) Escolhe aleatoriamente os índices que receberão cada extra
+        (podem coincidir – um cartão pode ter Short e Observação)
+  ------------------------------------------------------------------ */
+  const idx     = rows.map((_, i) => i).sort(() => Math.random() - 0.5);
+  const shortIx = new Set(idx.slice(0, nShort));
+  const obsIx   = new Set(idx.slice(nShort, nShort + nObs));
+
+  /* ------------------------------------------------------------------
+     3) Dados aleatórios
+  ------------------------------------------------------------------ */
   const nomes = [
-    'Ana Beatriz', 'Bruno Ferreira', 'Carlos Eduardo', 'Daniela Souza', 'Eduardo Lima', 'Fernanda Castro',
-    'Gabriel Silva', 'Helena Costa', 'Isabela Rocha', 'João Pedro', 'Kauã Martins', 'Larissa Monteiro',
-    'Lucas Gabriel', 'Mariana Oliveira', 'Nicolas Andrade', 'Otávio Moura', 'Paula Fernandes', 'Rafael Teixeira',
-    'Sofia Almeida', 'Thiago Ramos', 'Vitória Santos', 'Yasmin Freitas', 'Arthur Barros', 'Bianca Meireles',
-    'Caio Mendes', 'Débora Xavier', 'Enzo Carvalho', 'Fábio Ribeiro', 'Giovana Nunes', 'Henrique Diniz',
-    'Igor Cardoso', 'Júlia Neves', 'Kevin Augusto', 'Letícia Lopes', 'Manuela Sales', 'Natália Brito',
-    'Pedro Henrique', 'Quésia Dias', 'Ruan Silva', 'Samuel Castro', 'Tatiane Lima', 'Ueslei Torres',
-    'Vitor Hugo', 'Wesley Costa', 'Xênia Fernandes', 'Yuri Ferreira', 'Zuleide Duarte'
+    'Ana Beatriz','Bruno Ferreira','Carlos Eduardo','Daniela Souza','Eduardo Lima',
+    'Fernanda Castro','Gabriel Silva','Helena Costa','Isabela Rocha','João Pedro',
+    'Kauã Martins','Larissa Monteiro','Lucas Gabriel','Mariana Oliveira','Nicolas Andrade',
+    'Otávio Moura','Paula Fernandes','Rafael Teixeira','Sofia Almeida','Thiago Ramos',
+    'Vitória Santos','Yasmin Freitas','Arthur Barros','Bianca Meireles','Caio Mendes',
+    'Débora Xavier','Enzo Carvalho','Fábio Ribeiro','Giovana Nunes','Henrique Diniz',
+    'Igor Cardoso','Júlia Neves','Kevin Augusto','Letícia Lopes','Manuela Sales',
+    'Natália Brito','Pedro Henrique','Quésia Dias','Ruan Silva','Samuel Castro',
+    'Tatiane Lima','Ueslei Torres','Vitor Hugo','Wesley Costa','Xênia Fernandes',
+    'Yuri Ferreira','Zuleide Duarte'
   ];
 
   const observacoes = [
-    'Uniforme com manga longa',
-    'Incluir nome no short',
-    'Letra branca no nome',
-    'Número dourado na frente',
-    'Tecido mais fino, se possível',
-    'Urgente: precisa para dia 12',
-    'Verificar se nome cabe completo',
-    'Usar apelido em vez do nome',
-    'Sem número nas costas',
-    'Modelo igual ao da irmã',
+    'Uniforme com manga longa','Incluir nome no short','Letra branca no nome',
+    'Número dourado na frente','Tecido mais fino, se possível',
+    'Urgente: precisa para dia 12','Verificar se nome cabe completo',
+    'Usar apelido em vez do nome','Sem número nas costas','Modelo igual ao da irmã',
     'Short deve ser tamanho menor'
   ];
 
-  const rows = [...uniformList.children];
-  const total = rows.length;
-  const comShort   = Math.floor(total * 0.20);
-  const comObs     = Math.floor(total * 0.15);
-
-  // embaralha os índices
-  const indices = rows.map((_, i) => i).sort(() => Math.random() - 0.5);
-  const shortIdx = new Set(indices.slice(0, comShort));
-  const obsIdx   = new Set(indices.slice(comShort, comShort + comObs));
-
+  /* ------------------------------------------------------------------
+     4) Percorre os cartões e aplica os dados
+  ------------------------------------------------------------------ */
   rows.forEach((row, i) => {
-    const nomeIn = row.querySelector('input[placeholder="Nome"]');
-    const numIn  = row.querySelector('input[placeholder="Número"]');
-    nomeIn.value = nomes[Math.floor(Math.random() * nomes.length)];
-    numIn.value  = Math.floor(Math.random() * 99 + 1);
 
-    // Adiciona Short em 20% dos casos
-    if (shortIdx.has(i)) {
-      const btn = row.querySelector('button');
-      btn?.click();
-      const sel = row.querySelector('.shortSel');
-      if (sel) sel.value = row.dataset.size;
+    /* -- nome + número ------------------------------------------------ */
+    row.querySelector('input[placeholder="Nome"]').value =
+      nomes[Math.floor(Math.random() * nomes.length)];
+
+    row.querySelector('input[placeholder="Número"]').value =
+      Math.floor(Math.random() * 99 + 1);
+
+    /* -- garante estado limpo ---------------------------------------- */
+    // se o cartão já tinha Short ou Obs, remove primeiro
+    const rmShortBtn = [...row.querySelectorAll('button')]
+                         .find(b => b.textContent.includes('Remover Short'));
+    rmShortBtn?.click();
+
+    const rmObsBtn   = [...row.querySelectorAll('button')]
+                         .find(b => b.textContent === 'Remover Obs.');
+    rmObsBtn?.click();
+
+    /* -- adiciona Short em 20 % --------------------------------------- */
+    if (shortIx.has(i)) {
+      const addShortBtn = [...row.querySelectorAll('button')]
+                           .find(b => b.textContent.includes('Adicionar Short'));
+      addShortBtn?.click();
+      row.querySelector('.shortSel').value = row.dataset.size;
     }
 
-    // Adiciona Observação em 15% dos casos
-    if (obsIdx.has(i)) {
+    /* -- adiciona Observação em 15 % ---------------------------------- */
+    if (obsIx.has(i)) {
       const obsBtn = row.querySelector('.obsBtn');
       obsBtn?.click();
-      const box = row.querySelector('.obsBox');
-      if (box) box.value = observacoes[Math.floor(Math.random() * observacoes.length)];
+      row.querySelector('.obsBox').value =
+        observacoes[Math.floor(Math.random() * observacoes.length)];
     }
   });
 
-  scheduleSave();
+  scheduleSave();  // dispara salvamento
 };
 
 
